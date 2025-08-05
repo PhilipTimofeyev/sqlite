@@ -20,9 +20,7 @@ fn main() -> Result<()> {
             let mut header = [0; 100];
             file.read_exact(&mut header)?;
 
-            let database_header = DatabaseHeader::try_from(&header[..]);
-            println!("{header:?}");
-            println!("{database_header:?}");
+            // let database_header = DatabaseHeader::try_from(&header[..]);
 
             // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
             #[allow(unused_variables)]
@@ -30,7 +28,6 @@ fn main() -> Result<()> {
 
             let mut page_type = [0u8; 3];
             let _ = file.read_exact(&mut page_type);
-            // println!("page type bytes {page_type:?}");
 
             let mut num_of_cells = [0u8; 2];
             let _ = file.read_exact(&mut num_of_cells);
@@ -38,6 +35,32 @@ fn main() -> Result<()> {
 
             print!("number of tables: {num_of_cells}");
             println!("database page size: {page_size}");
+        }
+        ".tables" => {
+            let mut file = File::open(&args[1])?;
+            let mut header = [0; 100];
+            file.read_exact(&mut header)?;
+
+            let mut leaf_header = [0; 8];
+            let mut interior_header = [0; 12];
+
+            let mut page_type_buf = [0u8; 3];
+            let _ = file.read_exact(&mut page_type_buf);
+
+            let page_type = PageType::from_bytes(&page_type_buf);
+
+            match page_type {
+                PageType::TableLeaf | PageType::IndexLeaf => {
+                    leaf_header[0..3].copy_from_slice(&page_type_buf);
+                    file.read_exact(&mut leaf_header[3..])?
+                }
+                PageType::TableInterior | PageType::IndexInterior => {
+                    interior_header[0..3].copy_from_slice(&page_type_buf);
+                    file.read_exact(&mut interior_header[3..])?
+                }
+            }
+
+            println!("next {leaf_header:?}");
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -54,8 +77,8 @@ enum PageType {
 }
 
 impl PageType {
-    fn from_byte(byte: &[u8]) -> PageType {
-        match byte[0] {
+    fn from_bytes(bytes: &[u8]) -> PageType {
+        match bytes[0] {
             13 => PageType::TableLeaf,
             _ => todo!(),
         }
@@ -72,7 +95,7 @@ struct DatabaseHeader {
     unused_space: [u8; 1],         // Usually 0
     max_embedded_payload: [u8; 1], // Must be 64
     min_embedded_payload: [u8; 1], // Must be 32
-    leaf_payload: [u8; 1], // Must be 32
+    leaf_payload: [u8; 1],         // Must be 32
     file_change_counter: [u8; 4],
     in_header_database_size: [u8; 4],
     page_num_first_freelist_trunk_page: [u8; 4],
