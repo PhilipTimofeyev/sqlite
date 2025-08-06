@@ -44,6 +44,7 @@ fn main() -> Result<()> {
             let mut header = [0; 100];
             file.read_exact(&mut header)?;
 
+            // ** Use dynamic vec with capacity 8 for header
             let mut leaf_header = [0; 8];
             let mut interior_header = [0; 12];
 
@@ -92,6 +93,12 @@ fn main() -> Result<()> {
                     cells.push(buf);
                 }
             }
+
+            let first_cell = &cells[1];
+            let hmm = TableLeafCell::try_from(first_cell.as_ref());
+            println!("{:?}", hmm);
+
+            println!("{:?}", cells.len());
 
         }
         _ => bail!("Missing or invalid command passed: {}", command),
@@ -273,5 +280,49 @@ impl TryFrom<&[u8]> for PageHeader {
         };
 
         Ok(page_header)
+    }
+}
+
+
+#[derive(Debug)]
+struct TableLeafCell {
+    payload_size: u8,
+    row_id: u8, // Primary Key
+    header: Vec<u8>,
+    payload: Vec<u8>
+
+}
+
+// struct Payload {
+//     header_size: usize,
+//
+//
+// }
+
+impl TryFrom<&[u8]> for TableLeafCell {
+    type Error = anyhow::Error;
+
+    fn try_from(mut bytes: &[u8]) -> Result<Self> {
+
+        let mut payload_size = [0; 1];
+        let mut row_id = [0; 1];
+        let mut header_size = [0; 1];
+
+        let _ = bytes.read_exact(&mut payload_size);
+        let _ = bytes.read_exact(&mut row_id);
+        let _ = bytes.read_exact(&mut header_size);
+
+        println!("{header_size:?}");
+
+        let header_size = header_size[0] as usize;
+
+        let mut header = vec![header_size as u8; header_size];
+        let _ = bytes.read_exact(&mut header[1..]);
+        let mut payload = Vec::new();
+        let _ = bytes.read_to_end(&mut payload);
+
+        // todo!();
+
+        Ok(TableLeafCell { payload_size: payload_size[0], row_id: row_id[0], header, payload })
     }
 }
