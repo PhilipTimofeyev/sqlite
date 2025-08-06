@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::prelude::*;
+use std::io::SeekFrom;
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -37,6 +38,8 @@ fn main() -> Result<()> {
             println!("database page size: {page_size}");
         }
         ".tables" => {
+            const PAGE_SIZE: usize = 4096;
+
             let mut file = File::open(&args[1])?;
             let mut header = [0; 100];
             file.read_exact(&mut header)?;
@@ -53,20 +56,43 @@ fn main() -> Result<()> {
                 PageType::TableLeaf | PageType::IndexLeaf => {
                     leaf_header[0..1].copy_from_slice(&page_type_buf);
                     file.read_exact(&mut leaf_header[1..])?;
-                    PageHeader::try_from(&leaf_header[..])
+                    PageHeader::try_from(&leaf_header[..])?
                 }
                 PageType::TableInterior | PageType::IndexInterior => {
                     interior_header[0..1].copy_from_slice(&page_type_buf);
                     file.read_exact(&mut interior_header[1..])?;
-                        todo!()
+                    todo!()
                 }
             };
 
-            // let mut next = [0; 40];
-            //
-            // file.read_exact(&mut next);
+            let mut cell_buf = [0; 2];
+            let mut cell_pointers = Vec::new();
+            for _ in 0..page_header.cell_count {
+                let _ = file.read_exact(&mut cell_buf);
+                let pointer = u16::from_be_bytes(cell_buf);
+                cell_pointers.push(pointer);
+            }
 
-            println!("next {page_header:?}");
+            let first_cell_pointer = *cell_pointers.last().expect("No cell pointers") as u64;
+            file.seek(SeekFrom::Start(first_cell_pointer))?;
+
+            let mut cell_pointers_peek = cell_pointers.iter().rev().peekable();
+            let mut cells = Vec::new();
+
+            while let Some(pointer) = cell_pointers_peek.next() {
+                if let Some(next_pointer) = cell_pointers_peek.peek() {
+                    let num_bytes_to_read = *next_pointer - pointer;
+                    let mut buf = vec![0; num_bytes_to_read as usize];
+                    let _ = file.read_exact(&mut buf);
+                    cells.push(buf); 
+                } else {
+                    let num_bytes_to_read = PAGE_SIZE - file.stream_position().unwrap() as usize;
+                    let mut buf = vec![0; num_bytes_to_read];
+                    let _ = file.read_exact(&mut buf);
+                    cells.push(buf);
+                }
+            }
+
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -216,7 +242,6 @@ impl TryFrom<&[u8]> for PageHeader {
     type Error = anyhow::Error;
 
     fn try_from(mut bytes: &[u8]) -> Result<Self> {
-        println!("bytes ;{bytes:?}");
         if bytes.len() < 8 {
             return Err(anyhow!("Header is too short"));
         }
@@ -244,7 +269,7 @@ impl TryFrom<&[u8]> for PageHeader {
             first_free_block,
             cell_count,
             cell_content_area,
-            fragment_free_bytes
+            fragment_free_bytes,
         };
 
         Ok(page_header)
