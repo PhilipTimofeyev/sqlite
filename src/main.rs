@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::io::SeekFrom;
 
 fn main() -> Result<()> {
@@ -94,9 +95,38 @@ fn main() -> Result<()> {
                 }
             }
 
-            let first_cell = &cells[1];
-            let hmm = TableLeafCell::try_from(first_cell.as_ref());
-            println!("{:?}", hmm);
+            let first_cell = &cells[2];
+            let hmm = TableLeafCell::try_from(first_cell.as_ref())?;
+
+            let mut serial_types = Vec::new();
+
+            for code in &hmm.header[1..] {
+                let a = SerialType::from_code(*code);
+                serial_types.push(a);
+            }
+
+            // let result = Vec::new();
+            //
+            let mut cursor = Cursor::new(hmm.payload);
+            println!("{:?}", cursor);
+
+            for serial_type in &serial_types {
+                match serial_type {
+                    SerialType::Integer(bytes) => {
+                        let mut buf = vec![0; *bytes as usize];
+                        cursor.read_exact(&mut buf);
+                    }
+                    SerialType::Text(bytes) => {
+                        let mut buf = vec![0; *bytes];
+                        cursor.read_exact(&mut buf);
+                        println!("{:?}", String::from_utf8(buf));
+                    }
+
+                    _ => todo!()
+                }
+
+            }
+            println!("{:?}", serial_types);
 
             println!("{:?}", cells.len());
 
@@ -293,6 +323,26 @@ struct TableLeafCell {
 
 }
 
+#[derive(Debug)]
+enum SerialType {
+    Null,
+    Integer(i64),
+    Blob(usize),
+    Text(usize)
+}
+
+impl SerialType {
+    fn from_code(code: u8) -> Self {
+        match code {
+            0 => SerialType::Null,
+            1..7 => SerialType::Integer(1),
+            n if n >= 12 && n % 2 == 0 => SerialType::Blob(((n - 12) / 2) as usize),
+            n if n >= 13 && n % 2 == 1 => SerialType::Text(((n - 13) / 2) as usize),
+            _ => todo!()
+        }
+    }
+}
+
 // struct Payload {
 //     header_size: usize,
 //
@@ -311,8 +361,6 @@ impl TryFrom<&[u8]> for TableLeafCell {
         let _ = bytes.read_exact(&mut payload_size);
         let _ = bytes.read_exact(&mut row_id);
         let _ = bytes.read_exact(&mut header_size);
-
-        println!("{header_size:?}");
 
         let header_size = header_size[0] as usize;
 
