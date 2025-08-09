@@ -86,19 +86,26 @@ fn main() -> Result<()> {
                     let num_bytes_to_read = *next_pointer - pointer;
                     let mut buf = vec![0; num_bytes_to_read as usize];
                     let _ = file.read_exact(&mut buf);
-                    cells.push(buf);
+                    let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
+                    cells.push(table_leaf_cell);
                 } else {
                     let num_bytes_to_read = PAGE_SIZE - file.stream_position().unwrap() as usize;
                     let mut buf = vec![0; num_bytes_to_read];
                     let _ = file.read_exact(&mut buf);
-                    cells.push(buf);
+                    let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
+                    cells.push(table_leaf_cell);
                 }
             }
 
-            table_names(cells);
+            let table_names: Result<Vec<String>, _> = cells
+                .iter()
+                .rev()
+                .map(|cell| {
+                    std::str::from_utf8(&cell.payload.table_name).map(|name| name.to_string())
+                })
+                .collect();
 
-
-            // println!("{:?}", cells.len());
+            println!("{:?}", table_names?.join(" "));
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -287,7 +294,7 @@ struct TableLeafCell {
     payload_size: u8,
     row_id: u8, // Primary Key
     header: Vec<u8>,
-    payload: Vec<u8>,
+    payload: Schema,
 }
 
 #[derive(Debug)]
@@ -310,12 +317,6 @@ impl SerialType {
     }
 }
 
-// struct Payload {
-//     header_size: usize,
-//
-//
-// }
-
 impl TryFrom<&[u8]> for TableLeafCell {
     type Error = anyhow::Error;
 
@@ -335,7 +336,7 @@ impl TryFrom<&[u8]> for TableLeafCell {
         let mut payload = Vec::new();
         let _ = bytes.read_to_end(&mut payload);
 
-        // todo!();
+        let payload = Schema::new(header.clone(), payload);
 
         Ok(TableLeafCell {
             payload_size: payload_size[0],
@@ -346,61 +347,67 @@ impl TryFrom<&[u8]> for TableLeafCell {
     }
 }
 
-fn table_names(cells: Vec<Vec<u8>>) {
-    let mut result = Vec::new();
 
-    for cell in cells {
-        let hmm = TableLeafCell::try_from(&cell[..]).unwrap();
+#[derive(Debug)]
+struct Schema {
+    schema_type: Vec<u8>,
+    name: Vec<u8>,
+    table_name: Vec<u8>,
+    root_page: Vec<u8>,
+    sql: Vec<u8>,
+}
 
+// May add
+enum SchemaType {
+    TableType,
+    Name,
+}
+
+impl Schema {
+    fn new(header: Vec<u8>, payload: Vec<u8>) -> Schema {
         let mut serial_types = Vec::new();
 
-        for code in &hmm.header[1..] {
+        for code in &header[1..] {
             let a = SerialType::from_code(*code);
             serial_types.push(a);
         }
 
-        // let result = Vec::new();
-        //
-        let mut cursor = Cursor::new(hmm.payload);
+        let mut cursor = Cursor::new(payload);
         let mut schema_vec = Vec::new();
-        // println!("{:?}", serial_types);
 
         for serial_type in &serial_types {
             match serial_type {
                 SerialType::Integer(bytes) => {
                     let mut buf = vec![0; *bytes as usize];
-                    cursor.read_exact(&mut buf);
-                    schema_vec.push(String::from(""));
+                    let _ = cursor.read_exact(&mut buf);
+                    schema_vec.push(buf);
                 }
                 SerialType::Text(bytes) => {
                     let mut buf = vec![0; *bytes];
-                    cursor.read_exact(&mut buf);
-                    schema_vec.push(String::from_utf8(buf).unwrap());
+                    let _ = cursor.read_exact(&mut buf);
+                    schema_vec.push(buf);
                 }
-
                 _ => todo!(),
             }
         }
 
-        result.push(schema_vec[1].clone());
+        let schema_type = schema_vec.remove(0);
+        let name = schema_vec.remove(0);
+        let table_name = schema_vec.remove(0);
+        let root_page = schema_vec.remove(0);
+        let sql: Vec<u8> = schema_vec
+            .into_iter()
+            .flatten()
+            .collect::<Vec<u8>>()
+            .drain(..)
+            .collect();
 
-        // print!("{} ", schema_vec[1]);
+        Schema {
+            schema_type,
+            name,
+            table_name,
+            root_page,
+            sql,
+        }
     }
-
-    result.reverse();
-    print!("{}", result.join(" "));
-}
-
-struct Schema {
-    schema_type: SchemaType,
-    name: String,
-    table_name: String,
-    rootpage: u64,
-    sql: String
-}
-
-enum SchemaType {
-    TableType,
-    Name,
-
 }
