@@ -45,35 +45,8 @@ fn main() -> Result<()> {
             let mut header = [0; 100];
             file.read_exact(&mut header)?;
 
-            // ** Use dynamic vec with capacity 8 for header
-            let mut leaf_header = [0; 8];
-            let mut interior_header = [0; 12];
-
-            let mut page_type_buf = [0u8; 1];
-            let _ = file.read_exact(&mut page_type_buf);
-
-            let page_type = PageType::from_bytes(&page_type_buf);
-
-            let page_header = match page_type {
-                PageType::TableLeaf | PageType::IndexLeaf => {
-                    leaf_header[0..1].copy_from_slice(&page_type_buf);
-                    file.read_exact(&mut leaf_header[1..])?;
-                    PageHeader::try_from(&leaf_header[..])?
-                }
-                PageType::TableInterior | PageType::IndexInterior => {
-                    interior_header[0..1].copy_from_slice(&page_type_buf);
-                    file.read_exact(&mut interior_header[1..])?;
-                    todo!()
-                }
-            };
-
-            let mut cell_buf = [0; 2];
-            let mut cell_pointers = Vec::new();
-            for _ in 0..page_header.cell_count {
-                let _ = file.read_exact(&mut cell_buf);
-                let pointer = u16::from_be_bytes(cell_buf);
-                cell_pointers.push(pointer);
-            }
+            let page_header = PageHeader::new(&mut file)?;
+            let cell_pointers = Cell::pointers(&mut file, page_header);
 
             let first_cell_pointer = *cell_pointers.last().expect("No cell pointers") as u64;
             file.seek(SeekFrom::Start(first_cell_pointer))?;
@@ -105,7 +78,7 @@ fn main() -> Result<()> {
                 })
                 .collect();
 
-            println!("{:?}", table_names?.join(" "));
+            println!("{}", table_names?.join(" "));
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -251,6 +224,30 @@ struct PageHeader {
     fragment_free_bytes: u8,
 }
 
+impl PageHeader {
+    fn new(file: &mut File) -> Result<PageHeader> {
+        // Change to dynamic vector for headers
+            let mut leaf_header = [0; 8];
+            let mut interior_header = [0; 12];
+            let mut page_type_buf = [0u8; 1];
+            let _ = file.read_exact(&mut page_type_buf);
+
+            let page_type = PageType::from_bytes(&page_type_buf);
+            match page_type {
+                PageType::TableLeaf | PageType::IndexLeaf => {
+                    leaf_header[0..1].copy_from_slice(&page_type_buf);
+                    file.read_exact(&mut leaf_header[1..])?;
+                    PageHeader::try_from(&leaf_header[..])
+                }
+                PageType::TableInterior | PageType::IndexInterior => {
+                    interior_header[0..1].copy_from_slice(&page_type_buf);
+                    file.read_exact(&mut interior_header[1..]);
+                    todo!()
+                }
+            }
+    }
+}
+
 impl TryFrom<&[u8]> for PageHeader {
     type Error = anyhow::Error;
 
@@ -286,6 +283,22 @@ impl TryFrom<&[u8]> for PageHeader {
         };
 
         Ok(page_header)
+    }
+}
+
+struct Cell {}
+
+impl Cell {
+    fn pointers(file: &mut File, page_header: PageHeader) -> Vec<u16> {
+                    let mut cell_buf = [0; 2];
+            let mut cell_pointers = Vec::new();
+            for _ in 0..page_header.cell_count {
+                let _ = file.read_exact(&mut cell_buf);
+                let pointer = u16::from_be_bytes(cell_buf);
+                cell_pointers.push(pointer);
+            };
+
+            cell_pointers
     }
 }
 
@@ -347,7 +360,7 @@ impl TryFrom<&[u8]> for TableLeafCell {
     }
 }
 
-
+                            
 #[derive(Debug)]
 struct Schema {
     schema_type: Vec<u8>,
