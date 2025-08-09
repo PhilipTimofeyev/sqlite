@@ -86,7 +86,7 @@ fn main() -> Result<()> {
                     let num_bytes_to_read = *next_pointer - pointer;
                     let mut buf = vec![0; num_bytes_to_read as usize];
                     let _ = file.read_exact(&mut buf);
-                    cells.push(buf); 
+                    cells.push(buf);
                 } else {
                     let num_bytes_to_read = PAGE_SIZE - file.stream_position().unwrap() as usize;
                     let mut buf = vec![0; num_bytes_to_read];
@@ -95,41 +95,10 @@ fn main() -> Result<()> {
                 }
             }
 
-            let first_cell = &cells[2];
-            let hmm = TableLeafCell::try_from(first_cell.as_ref())?;
+            table_names(cells);
 
-            let mut serial_types = Vec::new();
 
-            for code in &hmm.header[1..] {
-                let a = SerialType::from_code(*code);
-                serial_types.push(a);
-            }
-
-            // let result = Vec::new();
-            //
-            let mut cursor = Cursor::new(hmm.payload);
-            println!("{:?}", cursor);
-
-            for serial_type in &serial_types {
-                match serial_type {
-                    SerialType::Integer(bytes) => {
-                        let mut buf = vec![0; *bytes as usize];
-                        cursor.read_exact(&mut buf);
-                    }
-                    SerialType::Text(bytes) => {
-                        let mut buf = vec![0; *bytes];
-                        cursor.read_exact(&mut buf);
-                        println!("{:?}", String::from_utf8(buf));
-                    }
-
-                    _ => todo!()
-                }
-
-            }
-            println!("{:?}", serial_types);
-
-            println!("{:?}", cells.len());
-
+            // println!("{:?}", cells.len());
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -313,14 +282,12 @@ impl TryFrom<&[u8]> for PageHeader {
     }
 }
 
-
 #[derive(Debug)]
 struct TableLeafCell {
     payload_size: u8,
     row_id: u8, // Primary Key
     header: Vec<u8>,
-    payload: Vec<u8>
-
+    payload: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -328,7 +295,7 @@ enum SerialType {
     Null,
     Integer(i64),
     Blob(usize),
-    Text(usize)
+    Text(usize),
 }
 
 impl SerialType {
@@ -338,7 +305,7 @@ impl SerialType {
             1..7 => SerialType::Integer(1),
             n if n >= 12 && n % 2 == 0 => SerialType::Blob(((n - 12) / 2) as usize),
             n if n >= 13 && n % 2 == 1 => SerialType::Text(((n - 13) / 2) as usize),
-            _ => todo!()
+            _ => todo!(),
         }
     }
 }
@@ -353,7 +320,6 @@ impl TryFrom<&[u8]> for TableLeafCell {
     type Error = anyhow::Error;
 
     fn try_from(mut bytes: &[u8]) -> Result<Self> {
-
         let mut payload_size = [0; 1];
         let mut row_id = [0; 1];
         let mut header_size = [0; 1];
@@ -371,6 +337,70 @@ impl TryFrom<&[u8]> for TableLeafCell {
 
         // todo!();
 
-        Ok(TableLeafCell { payload_size: payload_size[0], row_id: row_id[0], header, payload })
+        Ok(TableLeafCell {
+            payload_size: payload_size[0],
+            row_id: row_id[0],
+            header,
+            payload,
+        })
     }
+}
+
+fn table_names(cells: Vec<Vec<u8>>) {
+    let mut result = Vec::new();
+
+    for cell in cells {
+        let hmm = TableLeafCell::try_from(&cell[..]).unwrap();
+
+        let mut serial_types = Vec::new();
+
+        for code in &hmm.header[1..] {
+            let a = SerialType::from_code(*code);
+            serial_types.push(a);
+        }
+
+        // let result = Vec::new();
+        //
+        let mut cursor = Cursor::new(hmm.payload);
+        let mut schema_vec = Vec::new();
+        // println!("{:?}", serial_types);
+
+        for serial_type in &serial_types {
+            match serial_type {
+                SerialType::Integer(bytes) => {
+                    let mut buf = vec![0; *bytes as usize];
+                    cursor.read_exact(&mut buf);
+                    schema_vec.push(String::from(""));
+                }
+                SerialType::Text(bytes) => {
+                    let mut buf = vec![0; *bytes];
+                    cursor.read_exact(&mut buf);
+                    schema_vec.push(String::from_utf8(buf).unwrap());
+                }
+
+                _ => todo!(),
+            }
+        }
+
+        result.push(schema_vec[1].clone());
+
+        // print!("{} ", schema_vec[1]);
+    }
+
+    result.reverse();
+    print!("{}", result.join(" "));
+}
+
+struct Schema {
+    schema_type: SchemaType,
+    name: String,
+    table_name: String,
+    rootpage: u64,
+    sql: String
+}
+
+enum SchemaType {
+    TableType,
+    Name,
+
 }
