@@ -39,8 +39,6 @@ fn main() -> Result<()> {
             println!("database page size: {page_size}");
         }
         ".tables" => {
-            const PAGE_SIZE: usize = 4096;
-
             let mut file = File::open(&args[1])?;
             let mut header = [0; 100];
             file.read_exact(&mut header)?;
@@ -48,37 +46,8 @@ fn main() -> Result<()> {
             let page_header = PageHeader::new(&mut file)?;
             let cell_pointers = Cell::pointers(&mut file, page_header);
 
-            let first_cell_pointer = *cell_pointers.last().expect("No cell pointers") as u64;
-            file.seek(SeekFrom::Start(first_cell_pointer))?;
-
-            let mut cell_pointers_peek = cell_pointers.iter().rev().peekable();
-            let mut cells = Vec::new();
-
-            while let Some(pointer) = cell_pointers_peek.next() {
-                if let Some(next_pointer) = cell_pointers_peek.peek() {
-                    let num_bytes_to_read = *next_pointer - pointer;
-                    let mut buf = vec![0; num_bytes_to_read as usize];
-                    let _ = file.read_exact(&mut buf);
-                    let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
-                    cells.push(table_leaf_cell);
-                } else {
-                    let num_bytes_to_read = PAGE_SIZE - file.stream_position().unwrap() as usize;
-                    let mut buf = vec![0; num_bytes_to_read];
-                    let _ = file.read_exact(&mut buf);
-                    let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
-                    cells.push(table_leaf_cell);
-                }
-            }
-
-            let table_names: Result<Vec<String>, _> = cells
-                .iter()
-                .rev()
-                .map(|cell| {
-                    std::str::from_utf8(&cell.payload.table_name).map(|name| name.to_string())
-                })
-                .collect();
-
-            println!("{}", table_names?.join(" "));
+            let cells = Cell::build_cells(&mut file, cell_pointers)?;
+            let _ = Cell::display_table_names(cells);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -227,24 +196,24 @@ struct PageHeader {
 impl PageHeader {
     fn new(file: &mut File) -> Result<PageHeader> {
         // Change to dynamic vector for headers
-            let mut leaf_header = [0; 8];
-            let mut interior_header = [0; 12];
-            let mut page_type_buf = [0u8; 1];
-            let _ = file.read_exact(&mut page_type_buf);
+        let mut leaf_header = [0; 8];
+        let mut interior_header = [0; 12];
+        let mut page_type_buf = [0u8; 1];
+        let _ = file.read_exact(&mut page_type_buf);
 
-            let page_type = PageType::from_bytes(&page_type_buf);
-            match page_type {
-                PageType::TableLeaf | PageType::IndexLeaf => {
-                    leaf_header[0..1].copy_from_slice(&page_type_buf);
-                    file.read_exact(&mut leaf_header[1..])?;
-                    PageHeader::try_from(&leaf_header[..])
-                }
-                PageType::TableInterior | PageType::IndexInterior => {
-                    interior_header[0..1].copy_from_slice(&page_type_buf);
-                    file.read_exact(&mut interior_header[1..]);
-                    todo!()
-                }
+        let page_type = PageType::from_bytes(&page_type_buf);
+        match page_type {
+            PageType::TableLeaf | PageType::IndexLeaf => {
+                leaf_header[0..1].copy_from_slice(&page_type_buf);
+                file.read_exact(&mut leaf_header[1..])?;
+                PageHeader::try_from(&leaf_header[..])
             }
+            PageType::TableInterior | PageType::IndexInterior => {
+                interior_header[0..1].copy_from_slice(&page_type_buf);
+                let _ = file.read_exact(&mut interior_header[1..]);
+                todo!()
+            }
+        }
     }
 }
 
@@ -290,15 +259,54 @@ struct Cell {}
 
 impl Cell {
     fn pointers(file: &mut File, page_header: PageHeader) -> Vec<u16> {
-                    let mut cell_buf = [0; 2];
-            let mut cell_pointers = Vec::new();
-            for _ in 0..page_header.cell_count {
-                let _ = file.read_exact(&mut cell_buf);
-                let pointer = u16::from_be_bytes(cell_buf);
-                cell_pointers.push(pointer);
-            };
+        let mut cell_buf = [0; 2];
+        let mut cell_pointers = Vec::new();
+        for _ in 0..page_header.cell_count {
+            let _ = file.read_exact(&mut cell_buf);
+            let pointer = u16::from_be_bytes(cell_buf);
+            cell_pointers.push(pointer);
+        }
 
-            cell_pointers
+        cell_pointers
+    }
+
+    fn build_cells(file: &mut File, cell_pointers: Vec<u16>) -> Result<Vec<TableLeafCell>> {
+        const PAGE_SIZE: usize = 4096;
+        let first_cell_pointer = *cell_pointers.last().expect("No cell pointers") as u64;
+        file.seek(SeekFrom::Start(first_cell_pointer))?;
+
+        let mut cell_pointers_peek = cell_pointers.iter().rev().peekable();
+        let mut cells = Vec::new();
+
+        while let Some(pointer) = cell_pointers_peek.next() {
+            if let Some(next_pointer) = cell_pointers_peek.peek() {
+                let num_bytes_to_read = *next_pointer - pointer;
+                let mut buf = vec![0; num_bytes_to_read as usize];
+                let _ = file.read_exact(&mut buf);
+                let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
+                cells.push(table_leaf_cell)
+            } else {
+                let num_bytes_to_read = PAGE_SIZE - file.stream_position().unwrap() as usize;
+                let mut buf = vec![0; num_bytes_to_read];
+                let _ = file.read_exact(&mut buf);
+                let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
+                cells.push(table_leaf_cell);
+            }
+        }
+
+        Ok(cells)
+    }
+
+    fn display_table_names(cells: Vec<TableLeafCell>) -> Result<()> {
+        let table_names: Result<Vec<String>, _> = cells
+            .iter()
+            .rev()
+            .map(|cell| std::str::from_utf8(&cell.payload.table_name).map(|name| name.to_string()))
+            .collect();
+
+        println!("{}", table_names?.join(" "));
+
+        Ok(())
     }
 }
 
@@ -360,7 +368,6 @@ impl TryFrom<&[u8]> for TableLeafCell {
     }
 }
 
-                            
 #[derive(Debug)]
 struct Schema {
     schema_type: Vec<u8>,
