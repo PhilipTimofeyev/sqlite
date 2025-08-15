@@ -41,13 +41,38 @@ fn main() -> Result<()> {
         ".tables" => {
             let mut file = File::open(&args[1])?;
             let mut header = [0; 100];
+
             file.read_exact(&mut header)?;
+            let database_header = DatabaseHeader::try_from(&header[..])?;
+            let page_size = u16::from_be_bytes(database_header.page_size) as usize;
 
-            let page_header = PageHeader::new(&mut file)?;
-            let cell_pointers = Cell::pointers(&mut file, page_header);
+            let mut root_page = vec![0; page_size - 100];
+            file.read_exact(&mut root_page)?;
 
-            let cells = Cell::build_cells(&mut file, cell_pointers)?;
-            let _ = Cell::display_table_names(cells);
+            let mut root_page = BTreePage::new(root_page);
+            root_page.file_header = Some(database_header);
+            let _ = root_page.table_names();
+
+            // for _page in 1..num_of_pages - 1 {
+            //     let mut page_buf = vec![0; page_size];
+            //     file.read_exact(&mut page_buf)?;
+            //     let b_tree = BTreePage::new(page_buf);
+            //     // println!("{:?}", b_tree);
+            //     let cells = b_tree.cells();
+            //     // println!("CELLS {:?}", cells);
+            //     // pages.push(b_tree);
+            // }
+        }
+        cmd if cmd.contains("select count(*)") => {
+            // let mut file = File::open(&args[1])?;
+            // let mut header = [0; 100];
+            // file.read_exact(&mut header)?;
+            //
+            // let page_header = PageHeader::new(&mut file)?;
+            // let cell_pointers = Cell::pointers(&mut file, page_header);
+            //
+            // let cells = Cell::build_cells(&mut file, cell_pointers, page_size)?;
+            // println!("{:?}", cells.len());
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -185,16 +210,87 @@ impl TryFrom<&[u8]> for DatabaseHeader {
 }
 
 #[derive(Debug)]
+struct BTreePage {
+    file_header: Option<DatabaseHeader>,
+    page_header: PageHeader,
+    cell_pointer_array: Vec<u16>,
+    unallocated_space: Vec<u8>,
+    cell_content_area: Vec<u8>,
+    reserved_region: Vec<u8>,
+}
+
+impl BTreePage {
+    fn new(bytes: Vec<u8>) -> BTreePage {
+        let mut cursor = Cursor::new(bytes);
+        let page_header = PageHeader::new(&mut cursor).unwrap();
+        let cell_pointer_array = Cell::pointers(&mut cursor, &page_header);
+        let unallocated_space_size = page_header.cell_content_area_start as u64 - 100 - cursor.position();
+        let mut unallocated_space = vec![0; unallocated_space_size as usize];
+        let _ = cursor.read_exact(&mut unallocated_space);
+        let mut cell_content_area = Vec::new();
+        let _ = cursor.read_to_end(&mut cell_content_area);
+        // println!("{:?}", page_header);
+        // println!("{:?}", cell_pointer_array);
+        // println!("{:?}", cell_content_area);
+        //
+
+        let reserved_region = Vec::default();
+
+        BTreePage {
+            file_header: None,
+            page_header,
+            cell_pointer_array,
+            unallocated_space,
+            cell_content_area,
+            reserved_region,
+        }
+    }
+
+    fn cells(&self) -> Result<Vec<TableLeafCell>> {
+        let mut file = Cursor::new(self.cell_content_area.clone());
+        let mut cell_pointers_peek = self.cell_pointer_array.iter().rev().peekable();
+        let mut cells = Vec::new();
+
+        while let Some(pointer) = cell_pointers_peek.next() {
+            if let Some(next_pointer) = cell_pointers_peek.peek() {
+                let num_bytes_to_read = *next_pointer - pointer;
+                let mut buf = vec![0; num_bytes_to_read as usize];
+                let _ = file.read_exact(&mut buf);
+                let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
+                cells.push(table_leaf_cell)
+            } else {
+                let mut buf = Vec::new();
+                let _ = file.read_to_end(&mut buf);
+                let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
+                cells.push(table_leaf_cell);
+            }
+        }
+
+        Ok(cells)
+    }
+
+    fn table_names(&self) -> Result<()> {
+        for cell in self.cells()?.iter().rev() {
+            let table_name_bytes = cell.schema().table_name;
+            println!("{}", String::from_utf8(table_name_bytes)?);
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 struct PageHeader {
     page_type: PageType,
     first_free_block: u16,
     cell_count: u16,
-    cell_content_area: u16,
+    cell_content_area_start: u16,
     fragment_free_bytes: u8,
+    page_number: Option<[u8; 4]>,
 }
 
 impl PageHeader {
-    fn new(file: &mut File) -> Result<PageHeader> {
+    fn new(file: &mut Cursor<Vec<u8>>) -> Result<PageHeader> {
         // Change to dynamic vector for headers
         let mut leaf_header = [0; 8];
         let mut interior_header = [0; 12];
@@ -240,15 +336,16 @@ impl TryFrom<&[u8]> for PageHeader {
         let page_type = PageType::from_bytes(&page_type);
         let first_free_block = u16::from_be_bytes(first_free_block);
         let cell_count = u16::from_be_bytes(cell_count);
-        let cell_content_area = u16::from_be_bytes(cell_content_area);
+        let cell_content_area_start = u16::from_be_bytes(cell_content_area);
         let fragment_free_bytes = u8::from_be_bytes(fragment_free_bytes);
 
         let page_header = PageHeader {
             page_type,
             first_free_block,
             cell_count,
-            cell_content_area,
+            cell_content_area_start,
             fragment_free_bytes,
+            page_number: None,
         };
 
         Ok(page_header)
@@ -258,7 +355,7 @@ impl TryFrom<&[u8]> for PageHeader {
 struct Cell {}
 
 impl Cell {
-    fn pointers(file: &mut File, page_header: PageHeader) -> Vec<u16> {
+    fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Vec<u16> {
         let mut cell_buf = [0; 2];
         let mut cell_pointers = Vec::new();
         for _ in 0..page_header.cell_count {
@@ -269,53 +366,13 @@ impl Cell {
 
         cell_pointers
     }
-
-    fn build_cells(file: &mut File, cell_pointers: Vec<u16>) -> Result<Vec<TableLeafCell>> {
-        const PAGE_SIZE: usize = 4096;
-        let first_cell_pointer = *cell_pointers.last().expect("No cell pointers") as u64;
-        file.seek(SeekFrom::Start(first_cell_pointer))?;
-
-        let mut cell_pointers_peek = cell_pointers.iter().rev().peekable();
-        let mut cells = Vec::new();
-
-        while let Some(pointer) = cell_pointers_peek.next() {
-            if let Some(next_pointer) = cell_pointers_peek.peek() {
-                let num_bytes_to_read = *next_pointer - pointer;
-                let mut buf = vec![0; num_bytes_to_read as usize];
-                let _ = file.read_exact(&mut buf);
-                let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
-                cells.push(table_leaf_cell)
-            } else {
-                let num_bytes_to_read = PAGE_SIZE - file.stream_position().unwrap() as usize;
-                let mut buf = vec![0; num_bytes_to_read];
-                let _ = file.read_exact(&mut buf);
-                let table_leaf_cell = TableLeafCell::try_from(&buf[..])?;
-                cells.push(table_leaf_cell);
-            }
-        }
-
-        Ok(cells)
-    }
-
-    fn display_table_names(cells: Vec<TableLeafCell>) -> Result<()> {
-        let table_names: Result<Vec<String>, _> = cells
-            .iter()
-            .rev()
-            .map(|cell| std::str::from_utf8(&cell.payload.table_name).map(|name| name.to_string()))
-            .collect();
-
-        println!("{}", table_names?.join(" "));
-
-        Ok(())
-    }
 }
-
 #[derive(Debug)]
 struct TableLeafCell {
     payload_size: u8,
     row_id: u8, // Primary Key
     header: Vec<u8>,
-    payload: Schema,
+    payload: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -357,7 +414,8 @@ impl TryFrom<&[u8]> for TableLeafCell {
         let mut payload = Vec::new();
         let _ = bytes.read_to_end(&mut payload);
 
-        let payload = Schema::new(header.clone(), payload);
+
+        // let payload = Schema::new(header.clone(), payload);
 
         Ok(TableLeafCell {
             payload_size: payload_size[0],
@@ -383,16 +441,16 @@ enum SchemaType {
     Name,
 }
 
-impl Schema {
-    fn new(header: Vec<u8>, payload: Vec<u8>) -> Schema {
+impl TableLeafCell {
+    fn schema(&self) -> Schema {
         let mut serial_types = Vec::new();
 
-        for code in &header[1..] {
+        for code in &self.header[1..] {
             let a = SerialType::from_code(*code);
             serial_types.push(a);
         }
 
-        let mut cursor = Cursor::new(payload);
+        let mut cursor = Cursor::new(self.payload.clone());
         let mut schema_vec = Vec::new();
 
         for serial_type in &serial_types {
