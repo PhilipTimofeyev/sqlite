@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Cursor;
-use std::io::SeekFrom;
+use std::io::{self, BufReader};
 
 fn main() -> Result<()> {
     // Parse arguments
@@ -14,7 +14,6 @@ fn main() -> Result<()> {
         _ => {}
     }
 
-    // Parse command and act accordingly
     let command = &args[2];
     match command.as_str() {
         ".dbinfo" => {
@@ -22,10 +21,7 @@ fn main() -> Result<()> {
             let mut header = [0; 100];
             file.read_exact(&mut header)?;
 
-            // let database_header = DatabaseHeader::try_from(&header[..]);
-
             // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
-            #[allow(unused_variables)]
             let page_size = u16::from_be_bytes([header[16], header[17]]);
 
             let mut page_type = [0u8; 3];
@@ -40,39 +36,27 @@ fn main() -> Result<()> {
         }
         ".tables" => {
             let mut file = File::open(&args[1])?;
-            let mut header = [0; 100];
+            let mut pages = BTreePage::build_pages(&mut file)?;
 
-            file.read_exact(&mut header)?;
-            let database_header = DatabaseHeader::try_from(&header[..])?;
-            let page_size = u16::from_be_bytes(database_header.page_size) as usize;
-
-            let mut root_page = vec![0; page_size - 100];
-            file.read_exact(&mut root_page)?;
-
-            let mut root_page = BTreePage::new(root_page);
-            root_page.file_header = Some(database_header);
+            let root_page = pages.remove(0);
+            
             let _ = root_page.table_names();
-
-            // for _page in 1..num_of_pages - 1 {
-            //     let mut page_buf = vec![0; page_size];
-            //     file.read_exact(&mut page_buf)?;
-            //     let b_tree = BTreePage::new(page_buf);
-            //     // println!("{:?}", b_tree);
-            //     let cells = b_tree.cells();
-            //     // println!("CELLS {:?}", cells);
-            //     // pages.push(b_tree);
-            // }
         }
-        cmd if cmd.contains("select count(*)") => {
-            // let mut file = File::open(&args[1])?;
-            // let mut header = [0; 100];
-            // file.read_exact(&mut header)?;
-            //
-            // let page_header = PageHeader::new(&mut file)?;
-            // let cell_pointers = Cell::pointers(&mut file, page_header);
-            //
-            // let cells = Cell::build_cells(&mut file, cell_pointers, page_size)?;
-            // println!("{:?}", cells.len());
+        cmd if cmd.to_lowercase().contains("select count(*)") => {
+            let mut file = File::open(&args[1])?;
+            let mut pages = BTreePage::build_pages(&mut file)?;
+
+            let table_name_to_find: Vec<&str> = args.last().unwrap().split_whitespace().collect();
+            let table_name_to_find = table_name_to_find.last().unwrap();
+            let root_page = pages.remove(0);
+            let page = root_page.find_table_page(table_name_to_find.to_string());
+
+            if let Some(table_page) = page {
+                let a = pages.remove(table_page as usize - 1);
+                println!("{}", a.cell_pointer_array.len())
+            } else {
+                bail!("Table not found")
+            };
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -220,20 +204,19 @@ struct BTreePage {
 }
 
 impl BTreePage {
-    fn new(bytes: Vec<u8>) -> BTreePage {
+    fn new(bytes: Vec<u8>, file_header: Option<DatabaseHeader>) -> BTreePage {
         let mut cursor = Cursor::new(bytes);
         let page_header = PageHeader::new(&mut cursor).unwrap();
         let cell_pointer_array = Cell::pointers(&mut cursor, &page_header);
-        let unallocated_space_size = page_header.cell_content_area_start as u64 - 100 - cursor.position();
+        let unallocated_space_size = if file_header.is_some() {
+            page_header.cell_content_area_start as u64 - 100 - cursor.position()
+        } else {
+            page_header.cell_content_area_start as u64 - cursor.position()
+        };
         let mut unallocated_space = vec![0; unallocated_space_size as usize];
         let _ = cursor.read_exact(&mut unallocated_space);
         let mut cell_content_area = Vec::new();
         let _ = cursor.read_to_end(&mut cell_content_area);
-        // println!("{:?}", page_header);
-        // println!("{:?}", cell_pointer_array);
-        // println!("{:?}", cell_content_area);
-        //
-
         let reserved_region = Vec::default();
 
         BTreePage {
@@ -246,10 +229,35 @@ impl BTreePage {
         }
     }
 
+    fn build_pages(file: &mut File) -> Result<Vec<BTreePage>> {
+            let mut header = [0; 100];
+
+            file.read_exact(&mut header)?;
+            let database_header = DatabaseHeader::try_from(&header[..])?;
+
+            let page_size = u16::from_be_bytes(database_header.page_size) as usize;
+            let mut root_page = vec![0; page_size - 100];
+            file.read_exact(&mut root_page)?;
+
+            let root_page = BTreePage::new(root_page, Some(database_header));
+            let mut pages = vec![root_page];
+
+            loop {
+                let mut buf = vec![0; page_size];
+                if file.read_exact(&mut buf).is_err() {
+                    return Ok(pages)
+                };
+                let b_tree = BTreePage::new(buf, None);
+                pages.push(b_tree);
+            }
+    }
+
     fn cells(&self) -> Result<Vec<TableLeafCell>> {
         let mut file = Cursor::new(self.cell_content_area.clone());
         let mut cell_pointers_peek = self.cell_pointer_array.iter().rev().peekable();
         let mut cells = Vec::new();
+
+        // println!("{}", self.cell_pointer_array.len());
 
         while let Some(pointer) = cell_pointers_peek.next() {
             if let Some(next_pointer) = cell_pointers_peek.peek() {
@@ -276,6 +284,14 @@ impl BTreePage {
         }
 
         Ok(())
+    }
+
+    fn find_table_page(&self, table: String) -> Option<u8> {
+        let cells = &self.cells().unwrap();
+        let table_cell = cells
+            .iter()
+            .find(|cell| String::from_utf8(cell.schema().table_name) == Ok(table.clone()));
+        table_cell.map(|cell| cell.row_id)
     }
 }
 
@@ -399,6 +415,7 @@ impl TryFrom<&[u8]> for TableLeafCell {
     type Error = anyhow::Error;
 
     fn try_from(mut bytes: &[u8]) -> Result<Self> {
+        // println!("BYTES: {:?}", bytes);
         let mut payload_size = [0; 1];
         let mut row_id = [0; 1];
         let mut header_size = [0; 1];
@@ -413,7 +430,6 @@ impl TryFrom<&[u8]> for TableLeafCell {
         let _ = bytes.read_exact(&mut header[1..]);
         let mut payload = Vec::new();
         let _ = bytes.read_to_end(&mut payload);
-
 
         // let payload = Schema::new(header.clone(), payload);
 
