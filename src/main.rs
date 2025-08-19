@@ -39,7 +39,7 @@ fn main() -> Result<()> {
             let mut pages = BTreePage::build_pages(&mut file)?;
 
             let root_page = pages.remove(0);
-            
+
             let _ = root_page.table_names();
         }
         cmd if cmd.to_lowercase().contains("select count(*)") => {
@@ -57,6 +57,50 @@ fn main() -> Result<()> {
             } else {
                 bail!("Table not found")
             };
+        }
+        cmd if cmd.to_lowercase().contains("select") => {
+            let mut file = File::open(&args[1])?;
+            let mut pages = BTreePage::build_pages(&mut file)?;
+
+            let stuff: Vec<&str> = args.last().unwrap().split_whitespace().collect();
+            let table_name_to_find = stuff.last().unwrap();
+            let selection = stuff[1];
+            // println!("TABLE {:?}", table_name_to_find);
+            // CHANGE TO REF
+            let root_page = pages.remove(0);
+            let page = root_page.find_table_page(table_name_to_find.to_string());
+            let hmm = root_page.cells()?;
+            let schema = hmm[0].schema();
+            let columns = String::from_utf8(schema.sql)?;
+            let columns = columns.split(&['(', ')'][..]).collect::<Vec<&str>>();
+            let columns = columns.last().unwrap().split(',').collect::<Vec<&str>>();
+            let column = columns
+                .iter()
+                .position(|&column| column.contains(selection));
+            // println!("LENGTH {:?}", columns);
+            // println!("LENGTH {:?}", column);
+
+            // println!("CELL {:?}", pages[page.unwrap() as usize].cells()?[0]);
+            // pages[page.unwrap() as usize].cells()?[0].decode()
+
+            // for cell in pages[page.unwrap() as usize - 1].cells()? {
+            //     cell.decode()
+            //     // cell.schema();
+            // }
+            // println!("{:?}", pages[0].cells());
+
+            for cell in pages[page.unwrap() as usize - 1].cells()? {
+                cell.decode(column.unwrap())
+            }
+
+            // if let Some(table_page) = page {
+            //     let a = pages.remove(table_page as usize - 1);
+            //     for cell in a.cells()? {
+            //         println!("{:?}", cell.schema().name)
+            //     }
+            // } else {
+            //     bail!("Table not found")
+            // };
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -230,26 +274,26 @@ impl BTreePage {
     }
 
     fn build_pages(file: &mut File) -> Result<Vec<BTreePage>> {
-            let mut header = [0; 100];
+        let mut header = [0; 100];
 
-            file.read_exact(&mut header)?;
-            let database_header = DatabaseHeader::try_from(&header[..])?;
+        file.read_exact(&mut header)?;
+        let database_header = DatabaseHeader::try_from(&header[..])?;
 
-            let page_size = u16::from_be_bytes(database_header.page_size) as usize;
-            let mut root_page = vec![0; page_size - 100];
-            file.read_exact(&mut root_page)?;
+        let page_size = u16::from_be_bytes(database_header.page_size) as usize;
+        let mut root_page = vec![0; page_size - 100];
+        file.read_exact(&mut root_page)?;
 
-            let root_page = BTreePage::new(root_page, Some(database_header));
-            let mut pages = vec![root_page];
+        let root_page = BTreePage::new(root_page, Some(database_header));
+        let mut pages = vec![root_page];
 
-            loop {
-                let mut buf = vec![0; page_size];
-                if file.read_exact(&mut buf).is_err() {
-                    return Ok(pages)
-                };
-                let b_tree = BTreePage::new(buf, None);
-                pages.push(b_tree);
-            }
+        loop {
+            let mut buf = vec![0; page_size];
+            if file.read_exact(&mut buf).is_err() {
+                return Ok(pages);
+            };
+            let b_tree = BTreePage::new(buf, None);
+            pages.push(b_tree);
+        }
     }
 
     fn cells(&self) -> Result<Vec<TableLeafCell>> {
@@ -288,6 +332,7 @@ impl BTreePage {
 
     fn find_table_page(&self, table: String) -> Option<u8> {
         let cells = &self.cells().unwrap();
+        // println!("CELLS: {:?}", cells);
         let table_cell = cells
             .iter()
             .find(|cell| String::from_utf8(cell.schema().table_name) == Ok(table.clone()));
@@ -411,25 +456,50 @@ impl SerialType {
     }
 }
 
+fn parse_varint(data: &[u8]) -> (u64, &[u8]) {
+    for i in 0..9 {
+        let Some(b) = data.get(i) else {
+            panic!("Not enough bytes for varint");
+        };
+        if b & 0x80 == 0 {
+            // This is the last byte of the VARINT, so convert it to
+            // a u64 and return it.
+            let mut value = 0u64;
+            for b in data[..=i].iter().rev() {
+                value = (value << 7) | (b & 0x7f) as u64;
+            }
+            return (value, &data[i + 1..]);
+        }
+    }
+
+    // More than 7 bytes is invalid.
+    panic!("Too many bytes for varint");
+}
+
 impl TryFrom<&[u8]> for TableLeafCell {
     type Error = anyhow::Error;
 
     fn try_from(mut bytes: &[u8]) -> Result<Self> {
-        // println!("BYTES: {:?}", bytes);
+        // println!("BYTES {:?}", bytes);
+
+        let (varint,mut data) = parse_varint(bytes);
+
+        // println!("varint{}", varint);
+
         let mut payload_size = [0; 1];
         let mut row_id = [0; 1];
         let mut header_size = [0; 1];
 
-        let _ = bytes.read_exact(&mut payload_size);
-        let _ = bytes.read_exact(&mut row_id);
-        let _ = bytes.read_exact(&mut header_size);
+        // let _ = data.read_exact(&mut payload_size);
+        let _ = data.read_exact(&mut row_id);
+        let _ = data.read_exact(&mut header_size);
 
         let header_size = header_size[0] as usize;
 
         let mut header = vec![header_size as u8; header_size];
-        let _ = bytes.read_exact(&mut header[1..]);
+        let _ = data.read_exact(&mut header[1..]);
         let mut payload = Vec::new();
-        let _ = bytes.read_to_end(&mut payload);
+        let _ = data.read_to_end(&mut payload);
 
         // let payload = Schema::new(header.clone(), payload);
 
@@ -458,13 +528,15 @@ enum SchemaType {
 }
 
 impl TableLeafCell {
-    fn schema(&self) -> Schema {
+    fn decode(&self, column: usize) {
         let mut serial_types = Vec::new();
 
         for code in &self.header[1..] {
             let a = SerialType::from_code(*code);
             serial_types.push(a);
         }
+
+        // println!("{:?}", serial_types);
 
         let mut cursor = Cursor::new(self.payload.clone());
         let mut schema_vec = Vec::new();
@@ -481,10 +553,59 @@ impl TableLeafCell {
                     let _ = cursor.read_exact(&mut buf);
                     schema_vec.push(buf);
                 }
+                SerialType::Null => {
+                    schema_vec.push(vec![0]);
+                }
                 _ => todo!(),
             }
         }
 
+        // println!("{:?}", serial_types);
+
+        // for row in &schema_vec {
+            let a = String::from_utf8(schema_vec.clone().to_vec()[column].clone()).unwrap();
+            println!("{a}");
+        // }
+    }
+
+    fn schema(&self) -> Schema {
+        let mut serial_types = Vec::new();
+
+        for code in &self.header[1..] {
+            let a = SerialType::from_code(*code);
+            serial_types.push(a);
+        }
+
+        // println!("{:?}", serial_types);
+
+        let mut cursor = Cursor::new(self.payload.clone());
+        let mut schema_vec = Vec::new();
+
+        for serial_type in &serial_types {
+            match serial_type {
+                SerialType::Integer(bytes) => {
+                    let mut buf = vec![0; *bytes as usize];
+                    let _ = cursor.read_exact(&mut buf);
+                    schema_vec.push(buf);
+                }
+                SerialType::Text(bytes) => {
+                    let mut buf = vec![0; *bytes];
+                    let _ = cursor.read_exact(&mut buf);
+                    schema_vec.push(buf);
+                }
+                SerialType::Null => {
+                    schema_vec.push(vec![0]);
+                }
+                _ => todo!(),
+            }
+        }
+
+        for row in &schema_vec {
+            let a = String::from_utf8(row.to_vec()).unwrap();
+            // println!("WeLL {a}");
+        }
+
+        // println!("VECTOR {:?}", schema_vec);
         let schema_type = schema_vec.remove(0);
         let name = schema_vec.remove(0);
         let table_name = schema_vec.remove(0);
@@ -495,6 +616,8 @@ impl TableLeafCell {
             .collect::<Vec<u8>>()
             .drain(..)
             .collect();
+
+        // println!("Hmm {}", String::from_utf8(sql.clone()).unwrap());
 
         Schema {
             schema_type,
