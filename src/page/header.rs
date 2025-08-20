@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use std::io::Cursor;
 use std::io::Read;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum PageType {
     TableLeaf,
@@ -20,6 +21,7 @@ impl PageType {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct PageHeader {
     page_type: PageType,
     first_free_block: u16,

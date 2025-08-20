@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use codecrafters_sqlite::page;
+use codecrafters_sqlite::page::{self};
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -24,6 +24,8 @@ fn main() -> Result<()> {
             println!("database page size: {page_size}");
         }
         ".tables" => {
+            // Lists all table names in database
+
             let mut file = File::open(&args[1])?;
             let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
 
@@ -31,16 +33,17 @@ fn main() -> Result<()> {
 
             let table_names = root_page.table_names()?;
             let _ = page::btree::display_string_vector(table_names);
-
         }
         cmd if cmd.to_lowercase().contains("select count(*)") => {
+            // Example command: "SELECT COUNT(*) FROM apples"
+            // Last argument is the table to get count from
+
             let mut file = File::open(&args[1])?;
             let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
 
-            let table_name_to_find: Vec<&str> = args.last().unwrap().split_whitespace().collect();
-            let table_name_to_find = table_name_to_find.last().unwrap();
             let root_page = pages.remove(0);
-            let page = root_page.find_table_page(table_name_to_find.to_string());
+            let table_name_to_find = args.last().unwrap().split_whitespace().last().unwrap();
+            let page = root_page.find_table_page(table_name_to_find)?;
 
             if let Some(table_page) = page {
                 let a = pages.remove(table_page as usize - 1);
@@ -57,9 +60,8 @@ fn main() -> Result<()> {
             let stuff: Vec<&str> = args.last().unwrap().split_whitespace().collect();
             let table_name_to_find = stuff.last().unwrap();
             let selection = stuff[1];
-            // CHANGE TO REF
             let root_page = pages.remove(0);
-            let page = root_page.find_table_page(table_name_to_find.to_string());
+            let page = root_page.find_table_page(table_name_to_find)?;
             let hmm = root_page.cells()?;
             let schema = hmm[0].schema();
             let columns = String::from_utf8(schema.sql)?;

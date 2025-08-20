@@ -10,9 +10,9 @@ pub struct BTreePage {
     pub file_header: Option<DatabaseHeader>,
     pub page_header: PageHeader,
     pub cell_pointer_array: Vec<u16>,
-    unallocated_space: Vec<u8>,
+    _unallocated_space: Vec<u8>,
     cell_content_area: Vec<u8>,
-    reserved_region: Vec<u8>,
+    _reserved_region: Vec<u8>,
 }
 
 impl BTreePage {
@@ -25,19 +25,19 @@ impl BTreePage {
         } else {
             page_header.cell_content_area_start as u64 - cursor.position()
         };
-        let mut unallocated_space = vec![0; unallocated_space_size as usize];
-        let _ = cursor.read_exact(&mut unallocated_space);
+        let mut _unallocated_space = vec![0; unallocated_space_size as usize];
+        let _ = cursor.read_exact(&mut _unallocated_space);
         let mut cell_content_area = Vec::new();
         let _ = cursor.read_to_end(&mut cell_content_area);
-        let reserved_region = Vec::default();
+        let _reserved_region = Vec::default();
 
         BTreePage {
             file_header,
             page_header,
             cell_pointer_array,
-            unallocated_space,
+            _unallocated_space,
             cell_content_area,
-            reserved_region,
+            _reserved_region,
         }
     }
 
@@ -67,7 +67,7 @@ impl BTreePage {
     pub fn cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
         let mut file = Cursor::new(self.cell_content_area.clone());
         let mut cell_pointers_peek = self.cell_pointer_array.iter().rev().peekable();
-        let mut cells = Vec::new();
+        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
 
         while let Some(pointer) = cell_pointers_peek.next() {
             if let Some(next_pointer) = cell_pointers_peek.peek() {
@@ -88,22 +88,24 @@ impl BTreePage {
     }
 
     pub fn table_names(&self) -> Result<Vec<String>> {
-        let table_names: Result<Vec<String>,_> = self.cells()?.iter().rev().map(|cell| {
-               let table_name_bytes = cell.schema().table_name;
-           String::from_utf8(table_name_bytes)   
-        }).collect();
+        let table_names: Result<Vec<String>, _> = self
+            .cells()?
+            .iter()
+            .rev()
+            .map(|cell| {
+                let table_name_bytes = cell.schema().table_name;
+                String::from_utf8(table_name_bytes)
+            })
+            .collect();
 
         Ok(table_names?)
     }
 
-
-
-    pub fn find_table_page(&self, table: String) -> Option<u8> {
-        let cells = &self.cells().unwrap();
-        let table_cell = cells
+    pub fn find_table_page(&self, table: &str) -> Result<Option<u8>> {
+        Ok(self.cells()?
             .iter()
-            .find(|cell| String::from_utf8(cell.schema().table_name) == Ok(table.clone()));
-        table_cell.map(|cell| cell.row_id)
+            .find(|cell| cell.schema().table_name == table.as_bytes())
+            .map(|cell| cell.row_id))
     }
 
     fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Vec<u16> {
@@ -119,10 +121,10 @@ impl BTreePage {
     }
 }
 
-    pub fn display_string_vector(table_names: Vec<String>) -> Result<()> {
-        for name in table_names {
-            println!("{name}");
-        }
-
-        Ok(())
+pub fn display_string_vector(table_names: Vec<String>) -> Result<()> {
+    for name in table_names {
+        println!("{name}");
     }
+
+    Ok(())
+}

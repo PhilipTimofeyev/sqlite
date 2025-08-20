@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::io::{Cursor, Read};
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct TableLeafCell {
     payload_size: u8,
@@ -9,6 +10,7 @@ pub struct TableLeafCell {
     payload: Vec<u8>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum SerialType {
     Null,
@@ -76,6 +78,7 @@ impl TryFrom<&[u8]> for TableLeafCell {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Schema {
     schema_type: Vec<u8>,
@@ -86,6 +89,7 @@ pub struct Schema {
 }
 
 // May add
+#[allow(dead_code)]
 enum SchemaType {
     TableType,
     Name,
