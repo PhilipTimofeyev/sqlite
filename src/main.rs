@@ -43,11 +43,11 @@ fn main() -> Result<()> {
 
             let root_page = pages.remove(0);
             let table_name_to_find = args.last().unwrap().split_whitespace().last().unwrap();
-            let page = root_page.find_table_page(table_name_to_find)?;
+            let page_index = root_page.find_table_page(table_name_to_find)?;
 
-            if let Some(table_page) = page {
-                let a = pages.remove(table_page as usize - 1);
-                println!("{}", a.cell_pointer_array.len())
+            if let Some(page_index) = page_index {
+                let page = pages.remove(page_index as usize - 1);
+                println!("{}", page.cell_pointer_array.len())
             } else {
                 bail!("Table not found")
             };

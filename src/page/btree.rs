@@ -16,10 +16,10 @@ pub struct BTreePage {
 }
 
 impl BTreePage {
-    fn new(bytes: Vec<u8>, file_header: Option<DatabaseHeader>) -> BTreePage {
+    fn new(bytes: Vec<u8>, file_header: Option<DatabaseHeader>) -> Result<BTreePage> {
         let mut cursor = Cursor::new(bytes);
-        let page_header = PageHeader::new(&mut cursor).unwrap();
-        let cell_pointer_array = BTreePage::pointers(&mut cursor, &page_header);
+        let page_header = PageHeader::new(&mut cursor)?;
+        let cell_pointer_array = BTreePage::pointers(&mut cursor, &page_header)?;
         let unallocated_space_size = if file_header.is_some() {
             page_header.cell_content_area_start as u64 - 100 - cursor.position()
         } else {
@@ -31,17 +31,18 @@ impl BTreePage {
         let _ = cursor.read_to_end(&mut cell_content_area);
         let _reserved_region = Vec::default();
 
-        BTreePage {
+        Ok(BTreePage {
             file_header,
             page_header,
             cell_pointer_array,
             _unallocated_space,
             cell_content_area,
             _reserved_region,
-        }
+        })
     }
 
     pub fn build_pages(file: &mut File) -> Result<Vec<BTreePage>> {
+        // Build root page
         let mut header = [0; 100];
 
         file.read_exact(&mut header)?;
@@ -51,7 +52,9 @@ impl BTreePage {
         let mut root_page = vec![0; page_size - 100];
         file.read_exact(&mut root_page)?;
 
-        let root_page = BTreePage::new(root_page, Some(database_header));
+        let root_page = BTreePage::new(root_page, Some(database_header))?;
+
+        // Build rest of pages
         let mut pages = vec![root_page];
 
         loop {
@@ -59,7 +62,7 @@ impl BTreePage {
             if file.read_exact(&mut buf).is_err() {
                 return Ok(pages);
             };
-            let b_tree = BTreePage::new(buf, None);
+            let b_tree = BTreePage::new(buf, None)?;
             pages.push(b_tree);
         }
     }
@@ -102,22 +105,23 @@ impl BTreePage {
     }
 
     pub fn find_table_page(&self, table: &str) -> Result<Option<u8>> {
-        Ok(self.cells()?
+        Ok(self
+            .cells()?
             .iter()
             .find(|cell| cell.schema().table_name == table.as_bytes())
             .map(|cell| cell.row_id))
     }
 
-    fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Vec<u16> {
+    fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Result<Vec<u16>> {
         let mut cell_buf = [0; 2];
         let mut cell_pointers = Vec::new();
         for _ in 0..page_header.cell_count {
-            let _ = file.read_exact(&mut cell_buf);
+            file.read_exact(&mut cell_buf)?;
             let pointer = u16::from_be_bytes(cell_buf);
             cell_pointers.push(pointer);
         }
 
-        cell_pointers
+        Ok(cell_pointers)
     }
 }
 
