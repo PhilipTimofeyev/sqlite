@@ -130,12 +130,12 @@ impl TableLeafCell {
         println!("{a}");
     }
 
-    pub fn schema(&self) -> Schema {
+    pub fn sqlite_schema(&self) -> Result<Schema> {
         let mut serial_types = Vec::new();
 
         for code in &self.header[1..] {
-            let a = SerialType::from_code(*code);
-            serial_types.push(a);
+            let serial_type = SerialType::from_code(*code);
+            serial_types.push(serial_type);
         }
 
         let mut cursor = Cursor::new(self.payload.clone());
@@ -145,12 +145,12 @@ impl TableLeafCell {
             match serial_type {
                 SerialType::Integer(bytes) => {
                     let mut buf = vec![0; *bytes as usize];
-                    let _ = cursor.read_exact(&mut buf);
+                    cursor.read_exact(&mut buf)?;
                     schema_vec.push(buf);
                 }
                 SerialType::Text(bytes) => {
                     let mut buf = vec![0; *bytes];
-                    let _ = cursor.read_exact(&mut buf);
+                    cursor.read_exact(&mut buf)?;
                     schema_vec.push(buf);
                 }
                 SerialType::Null => {
@@ -171,12 +171,12 @@ impl TableLeafCell {
             .drain(..)
             .collect();
 
-        Schema {
+        Ok(Schema {
             schema_type,
             name,
             table_name,
             root_page,
             sql,
-        }
+        })
     }
 }

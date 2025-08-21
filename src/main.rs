@@ -57,19 +57,21 @@ fn main() -> Result<()> {
             let mut file = File::open(&args[1])?;
             let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
 
-            let stuff: Vec<&str> = args.last().unwrap().split_whitespace().collect();
-            let table_name_to_find = stuff.last().unwrap();
-            let selection = stuff[1];
             let root_page = pages.remove(0);
+
+            let command: Vec<&str> = args.last().unwrap().split_whitespace().collect();
+            let table_name_to_find = command.last().unwrap();
+            let column_name = command[1];
+
             let page = root_page.find_table_page(table_name_to_find)?;
-            let hmm = root_page.cells()?;
-            let schema = hmm[0].schema();
-            let columns = String::from_utf8(schema.sql)?;
+            let root_page_cells = root_page.cells()?;
+            let sqlite_schema = root_page_cells[0].sqlite_schema()?;
+            let columns = String::from_utf8(sqlite_schema.sql)?;
             let columns = columns.split(&['(', ')'][..]).collect::<Vec<&str>>();
             let columns = columns.last().unwrap().split(',').collect::<Vec<&str>>();
             let column = columns
                 .iter()
-                .position(|&column| column.contains(selection));
+                .position(|&column| column.contains(column_name));
             // println!("LENGTH {:?}", columns);
             // println!("LENGTH {:?}", column);
 

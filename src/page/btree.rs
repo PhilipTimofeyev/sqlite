@@ -76,12 +76,12 @@ impl BTreePage {
             if let Some(next_pointer) = cell_pointers_peek.peek() {
                 let num_bytes_to_read = *next_pointer - pointer;
                 let mut buf = vec![0; num_bytes_to_read as usize];
-                let _ = file.read_exact(&mut buf);
+                file.read_exact(&mut buf)?;
                 let table_leaf_cell = table_leaf::TableLeafCell::try_from(&buf[..])?;
                 cells.push(table_leaf_cell)
             } else {
                 let mut buf = Vec::new();
-                let _ = file.read_to_end(&mut buf);
+                file.read_to_end(&mut buf)?;
                 let table_leaf_cell = table_leaf::TableLeafCell::try_from(&buf[..])?;
                 cells.push(table_leaf_cell);
             }
@@ -96,19 +96,21 @@ impl BTreePage {
             .iter()
             .rev()
             .map(|cell| {
-                let table_name_bytes = cell.schema().table_name;
-                String::from_utf8(table_name_bytes)
+                let sqlite_schema = cell.sqlite_schema()?;
+                String::from_utf8(sqlite_schema.table_name).map_err(anyhow::Error::from)
             })
             .collect();
 
-        Ok(table_names?)
+        table_names
     }
 
     pub fn find_table_page(&self, table: &str) -> Result<Option<u8>> {
         Ok(self
             .cells()?
             .iter()
-            .find(|cell| cell.schema().table_name == table.as_bytes())
+            .find(|cell| {
+                cell.sqlite_schema().is_ok_and(|schema| schema.table_name == table.as_bytes())
+            })
             .map(|cell| cell.row_id))
     }
 
