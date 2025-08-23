@@ -96,8 +96,8 @@ impl BTreePage {
             .iter()
             .rev()
             .map(|cell| {
-                let sqlite_schema = cell.sqlite_schema()?;
-                String::from_utf8(sqlite_schema.table_name).map_err(anyhow::Error::from)
+                let schema_definition = cell.sqlite_schema()?;
+                String::from_utf8(schema_definition.table_name).map_err(anyhow::Error::from)
             })
             .collect();
 
@@ -109,7 +109,8 @@ impl BTreePage {
             .cells()?
             .iter()
             .find(|cell| {
-                cell.sqlite_schema().is_ok_and(|schema| schema.table_name == table.as_bytes())
+                cell.sqlite_schema()
+                    .is_ok_and(|schema| schema.table_name == table.as_bytes())
             })
             .map(|cell| cell.row_id))
     }
@@ -127,9 +128,9 @@ impl BTreePage {
     }
 }
 
-pub fn display_string_vector(table_names: Vec<String>) -> Result<()> {
-    for name in table_names {
-        println!("{name}");
+pub fn display_string_vector(vector: Vec<String>) -> Result<()> {
+    for string in vector {
+        println!("{string}");
     }
 
     Ok(())

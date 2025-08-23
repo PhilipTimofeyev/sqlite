@@ -66,36 +66,20 @@ fn main() -> Result<()> {
             let page = root_page.find_table_page(table_name_to_find)?;
             let root_page_cells = root_page.cells()?;
             let sqlite_schema = root_page_cells[0].sqlite_schema()?;
+
+
             let columns = String::from_utf8(sqlite_schema.sql)?;
             let columns = columns.split(&['(', ')'][..]).collect::<Vec<&str>>();
-            let columns = columns.last().unwrap().split(',').collect::<Vec<&str>>();
+            let columns = columns[..columns.len()-1].last().unwrap().split(',').collect::<Vec<&str>>();
             let column = columns
                 .iter()
                 .position(|&column| column.contains(column_name));
-            // println!("LENGTH {:?}", columns);
-            // println!("LENGTH {:?}", column);
 
-            // println!("CELL {:?}", pages[page.unwrap() as usize].cells()?[0]);
-            // pages[page.unwrap() as usize].cells()?[0].decode()
-
-            // for cell in pages[page.unwrap() as usize - 1].cells()? {
-            //     cell.decode()
-            //     // cell.schema();
-            // }
-            // println!("{:?}", pages[0].cells());
-
+            // println!("{column:?}");
             for cell in pages[page.unwrap() as usize - 1].cells()? {
-                cell.decode(column.unwrap())
+                cell.read_column(column.unwrap())?
             }
 
-            // if let Some(table_page) = page {
-            //     let a = pages.remove(table_page as usize - 1);
-            //     for cell in a.cells()? {
-            //         println!("{:?}", cell.schema().name)
-            //     }
-            // } else {
-            //     bail!("Table not found")
-            // };
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
