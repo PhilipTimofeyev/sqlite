@@ -64,13 +64,15 @@ fn main() -> Result<()> {
             let column_name = command[1];
 
             let page = root_page.find_table_page(table_name_to_find)?;
-            let root_page_cells = root_page.cells()?;
-            let sqlite_schema = root_page_cells[0].sqlite_schema()?;
+            let schema = root_page.find_column(column_name)?;
 
-
-            let columns = String::from_utf8(sqlite_schema.sql)?;
-            let columns = columns.split(&['(', ')'][..]).collect::<Vec<&str>>();
-            let columns = columns[..columns.len()-1].last().unwrap().split(',').collect::<Vec<&str>>();
+            let schema_sql = String::from_utf8(schema.sql)?;
+            let columns = schema_sql.split(&['(', ')'][..]).collect::<Vec<&str>>();
+            let columns = columns[..columns.len() - 1]
+                .last()
+                .unwrap()
+                .split(',')
+                .collect::<Vec<&str>>();
             let column = columns
                 .iter()
                 .position(|&column| column.contains(column_name));
@@ -79,7 +81,6 @@ fn main() -> Result<()> {
             for cell in pages[page.unwrap() as usize - 1].cells()? {
                 cell.read_column(column.unwrap())?
             }
-
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }

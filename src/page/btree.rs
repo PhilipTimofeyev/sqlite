@@ -1,7 +1,7 @@
 use super::super::header::DatabaseHeader;
 use super::header::PageHeader;
 use crate::page::cell::table_leaf;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read};
 
@@ -113,6 +113,21 @@ impl BTreePage {
                     .is_ok_and(|schema| schema.table_name == table.as_bytes())
             })
             .map(|cell| cell.row_id))
+    }
+
+    pub fn find_column(&self, column: &str) -> Result<table_leaf::Schema> {
+        for cell in self.cells()? {
+            let schema = cell.sqlite_schema()?;
+            if schema.sql_contains_str(column) {
+                return Ok(schema)
+            }
+        }
+
+        bail!("Column not found")
+        // Ok(self.cells()?.iter().find(|cell| {
+        //     cell.sqlite_schema()
+        //         .is_ok_and(|schema| schema.sql_contains_str(column))
+        // }))
     }
 
     fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Result<Vec<u16>> {

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
@@ -103,6 +103,13 @@ pub struct Schema {
     pub sql: Vec<u8>,
 }
 
+impl Schema {
+    pub fn sql_contains_str(&self, text: &str) -> bool {
+        let text = text.as_bytes();
+        self.sql.windows(text.len()).any(|window| window == text)
+    }
+}
+
 // May add
 #[allow(dead_code)]
 enum SchemaType {
@@ -143,7 +150,6 @@ impl TableLeafCell {
                     let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
                     schema_vec.push(buf);
-
                 }
                 SerialType::Null => {
                     schema_vec.push(vec![0]);
