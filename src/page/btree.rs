@@ -90,6 +90,13 @@ impl BTreePage {
         Ok(cells)
     }
 
+    pub fn read_cell_columns(&self, column: usize) -> Result<()> {
+        for cell in self.cells()? {
+            cell.read_column(column)?
+        }
+        Ok(())
+    }
+
     pub fn table_names(&self) -> Result<Vec<String>> {
         let table_names: Result<Vec<String>, _> = self
             .cells()?
@@ -104,7 +111,7 @@ impl BTreePage {
         table_names
     }
 
-    pub fn find_table_page(&self, table: &str) -> Result<Option<u8>> {
+    pub fn find_table_page(&self, table: &str) -> Result<Option<usize>> {
         Ok(self
             .cells()?
             .iter()
@@ -112,22 +119,18 @@ impl BTreePage {
                 cell.sqlite_schema()
                     .is_ok_and(|schema| schema.table_name == table.as_bytes())
             })
-            .map(|cell| cell.row_id))
+            .map(|cell| cell.row_id as usize))
     }
 
     pub fn find_column(&self, column: &str) -> Result<table_leaf::Schema> {
         for cell in self.cells()? {
             let schema = cell.sqlite_schema()?;
             if schema.sql_contains_str(column) {
-                return Ok(schema)
+                return Ok(schema);
             }
         }
 
         bail!("Column not found")
-        // Ok(self.cells()?.iter().find(|cell| {
-        //     cell.sqlite_schema()
-        //         .is_ok_and(|schema| schema.sql_contains_str(column))
-        // }))
     }
 
     fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Result<Vec<u16>> {

@@ -46,7 +46,7 @@ fn main() -> Result<()> {
             let page_index = root_page.find_table_page(table_name_to_find)?;
 
             if let Some(page_index) = page_index {
-                let page = pages.remove(page_index as usize - 1);
+                let page = pages.remove(page_index - 1);
                 println!("{}", page.cell_pointer_array.len())
             } else {
                 bail!("Table not found")
@@ -54,6 +54,9 @@ fn main() -> Result<()> {
         }
 
         cmd if cmd.to_lowercase().contains("select") => {
+            // Example command: "SELECT color FROM oranges"
+            // Second word is column and last word is table
+
             let mut file = File::open(&args[1])?;
             let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
 
@@ -63,24 +66,17 @@ fn main() -> Result<()> {
             let table_name_to_find = command.last().unwrap();
             let column_name = command[1];
 
-            let page = root_page.find_table_page(table_name_to_find)?;
+            // Find page containing table
+            let page_index = root_page.find_table_page(table_name_to_find)?;
+
+            // Find schema containing column
             let schema = root_page.find_column(column_name)?;
 
-            let schema_sql = String::from_utf8(schema.sql)?;
-            let columns = schema_sql.split(&['(', ')'][..]).collect::<Vec<&str>>();
-            let columns = columns[..columns.len() - 1]
-                .last()
-                .unwrap()
-                .split(',')
-                .collect::<Vec<&str>>();
-            let column = columns
-                .iter()
-                .position(|&column| column.contains(column_name));
-
-            // println!("{column:?}");
-            for cell in pages[page.unwrap() as usize - 1].cells()? {
-                cell.read_column(column.unwrap())?
-            }
+            // Find column position
+            let column_index = schema.column_position(column_name)?;
+            
+            let page = &pages[page_index.unwrap() - 1];
+            page.read_cell_columns(column_index)?;
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }

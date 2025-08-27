@@ -82,7 +82,6 @@ impl TryFrom<&[u8]> for TableLeafCell {
         let _ = data.read_exact(&mut header[1..]);
         let mut payload = Vec::new();
         let _ = data.read_to_end(&mut payload);
-        // println!("Header {:?}", header);
 
         Ok(TableLeafCell {
             payload_size: payload_size.try_into()?,
@@ -107,6 +106,21 @@ impl Schema {
     pub fn sql_contains_str(&self, text: &str) -> bool {
         let text = text.as_bytes();
         self.sql.windows(text.len()).any(|window| window == text)
+    }
+
+    pub fn column_position(&self, column_name: &str) -> Result<usize> {
+        let schema_sql = String::from_utf8(self.sql.clone())?;
+        let columns = schema_sql.split(&['(', ')'][..]).collect::<Vec<&str>>();
+        let columns = columns[..columns.len() - 1]
+            .last()
+            .unwrap()
+            .split(',')
+            .collect::<Vec<&str>>();
+        let column = columns
+            .iter()
+            .position(|&column| column.contains(column_name)).unwrap();
+
+        Ok(column)
     }
 }
 
