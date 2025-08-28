@@ -115,10 +115,13 @@ impl Schema {
             .last()
             .unwrap()
             .split(',')
-            .collect::<Vec<&str>>();
+            .map(|col| col.trim().to_string())
+            .collect::<Vec<String>>();
+
         let column = columns
             .iter()
-            .position(|&column| column.contains(column_name)).unwrap();
+            .position(|column| column.contains(column_name))
+            .unwrap();
 
         Ok(column)
     }
@@ -132,12 +135,12 @@ enum SchemaType {
 }
 
 impl TableLeafCell {
-    pub fn read_column(&self, column: usize) -> Result<()> {
+    pub fn read_column(&self, column: &usize) -> Result<String> {
         let schema_vec = self.build_schema_vec()?;
-        let column = String::from_utf8(schema_vec.clone().to_vec()[column].clone())?;
-        println!("{column}");
+        let column = String::from_utf8(schema_vec.clone().to_vec()[*column].clone())?;
+        // println!("{column}");
 
-        Ok(())
+        Ok(column)
     }
 
     fn build_schema_vec(&self) -> Result<Vec<Vec<u8>>> {
@@ -181,7 +184,6 @@ impl TableLeafCell {
         let name = schema_vec.remove(0);
         let table_name = schema_vec.remove(0);
         let root_page = schema_vec.remove(0);
-        // println!("{schema_vec:?}");
         let sql: Vec<u8> = schema_vec
             .into_iter()
             .flatten()

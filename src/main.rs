@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use codecrafters_sqlite::page::{self};
+use std::collections::HashMap;
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -64,22 +65,47 @@ fn main() -> Result<()> {
 
             let command: Vec<&str> = args.last().unwrap().split_whitespace().collect();
             let table_name_to_find = command.last().unwrap();
-            let column_name = command[1];
+            let columns = parse_command_columns(command.clone());
 
             // Find page containing table
             let page_index = root_page.find_table_page(table_name_to_find)?;
 
-            // Find schema containing column
-            let schema = root_page.find_column(column_name)?;
+            // Create hash with column name and position
+            let mut columns_hsh = Vec::new();
 
-            // Find column position
-            let column_index = schema.column_position(column_name)?;
-            
+            for column in columns {
+                let schema = root_page.find_column(table_name_to_find, &column)?;
+                let column_index = schema.column_position(&column);
+
+                columns_hsh.push(column_index.unwrap());
+            }
+
             let page = &pages[page_index.unwrap() - 1];
-            page.read_cell_columns(column_index)?;
+
+            page.read_cell_columns(columns_hsh)?;
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 
     Ok(())
+}
+
+fn parse_command_columns(command: Vec<&str>) -> Vec<String> {
+    let from_idx = command
+        .iter()
+        .position(|word| word.to_lowercase() == "from")
+        .unwrap();
+
+    let columns = &command[1..from_idx];
+
+    columns
+        .iter()
+        .map(|column| keep_ascii_alphabet_chars(column.to_string()))
+        .collect()
+}
+
+fn keep_ascii_alphabet_chars(word: String) -> String {
+    word.chars()
+        .filter(|char| char.is_ascii_alphabetic())
+        .collect()
 }

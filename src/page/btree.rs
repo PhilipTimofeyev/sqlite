@@ -90,9 +90,14 @@ impl BTreePage {
         Ok(cells)
     }
 
-    pub fn read_cell_columns(&self, column: usize) -> Result<()> {
-        for cell in self.cells()? {
-            cell.read_column(column)?
+    pub fn read_cell_columns(&self, columns: Vec<usize>) -> Result<()> {
+        for cell in self.cells()?.iter() {
+            let a = columns
+                .iter()
+                .map(|i| cell.read_column(i).unwrap())
+                .collect::<Vec<String>>()
+                .join("|");
+            println!("{}", a);
         }
         Ok(())
     }
@@ -122,10 +127,11 @@ impl BTreePage {
             .map(|cell| cell.row_id as usize))
     }
 
-    pub fn find_column(&self, column: &str) -> Result<table_leaf::Schema> {
+    pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
+        // println!("{:?}", column);
         for cell in self.cells()? {
             let schema = cell.sqlite_schema()?;
-            if schema.sql_contains_str(column) {
+            if schema.sql_contains_str(column) && schema.table_name == table.as_bytes() {
                 return Ok(schema);
             }
         }
