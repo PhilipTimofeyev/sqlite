@@ -115,8 +115,7 @@ impl Schema {
             .last()
             .unwrap()
             .split(',')
-            .map(|col| col.trim().to_string())
-            .collect::<Vec<String>>();
+            .collect::<Vec<&str>>();
 
         let column = columns
             .iter()

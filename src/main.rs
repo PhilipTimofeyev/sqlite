@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
+use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::{self};
-use std::collections::HashMap;
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -43,8 +43,9 @@ fn main() -> Result<()> {
             let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
 
             let root_page = pages.remove(0);
-            let table_name_to_find = args.last().unwrap().split_whitespace().last().unwrap();
-            let page_index = root_page.find_table_page(table_name_to_find)?;
+            let mut split_command = command::split_command(cmd);
+            let table_name = split_command.remove(split_command.len() - 1);
+            let page_index = root_page.find_table_page(&table_name)?;
 
             if let Some(page_index) = page_index {
                 let page = pages.remove(page_index - 1);
@@ -55,34 +56,27 @@ fn main() -> Result<()> {
         }
 
         cmd if cmd.to_lowercase().contains("select") => {
-            // Example command: "SELECT color FROM oranges"
-            // Second word is column and last word is table
+            // Example command: "SELECT name, color FROM oranges"
+            // Everything between SELECT and FROM are the columns, retaining order
+            // Last word is table name
 
             let mut file = File::open(&args[1])?;
             let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
 
             let root_page = pages.remove(0);
 
-            let command: Vec<&str> = args.last().unwrap().split_whitespace().collect();
-            let table_name_to_find = command.last().unwrap();
-            let columns = parse_command_columns(command.clone());
+            let mut split_command = command::split_command(cmd);
+            let table_name = split_command.remove(split_command.len() - 1);
+            let columns = command::parse_command_columns(split_command);
 
-            // Find page containing table
-            let page_index = root_page.find_table_page(table_name_to_find)?;
-
-            // Create hash with column name and position
-            let mut columns_hsh = Vec::new();
-
-            for column in columns {
-                let schema = root_page.find_column(table_name_to_find, &column)?;
-                let column_index = schema.column_position(&column);
-
-                columns_hsh.push(column_index.unwrap());
-            }
-
+            // Search root page cells for specific table, returning row id of table
+            let page_index = root_page.find_table_page(&table_name)?;
             let page = &pages[page_index.unwrap() - 1];
 
-            page.read_cell_columns(columns_hsh)?;
+            // Get column index of each specified column
+            let column_indexes = root_page.indicies_of_columns(columns, table_name);
+
+            page.read_cell_columns(column_indexes)?;
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
@@ -90,22 +84,3 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_command_columns(command: Vec<&str>) -> Vec<String> {
-    let from_idx = command
-        .iter()
-        .position(|word| word.to_lowercase() == "from")
-        .unwrap();
-
-    let columns = &command[1..from_idx];
-
-    columns
-        .iter()
-        .map(|column| keep_ascii_alphabet_chars(column.to_string()))
-        .collect()
-}
-
-fn keep_ascii_alphabet_chars(word: String) -> String {
-    word.chars()
-        .filter(|char| char.is_ascii_alphabetic())
-        .collect()
-}
