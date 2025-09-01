@@ -90,11 +90,12 @@ impl BTreePage {
         Ok(cells)
     }
 
-    pub fn read_cell_columns(&self, columns: Vec<usize>) -> Result<()> {
+    pub fn read_cell_columns(&self, columns: Vec<(String, usize)>) -> Result<()> {
+        // Before joining, need to filter cells that contain the requested
         for cell in self.cells()?.iter() {
             let row = columns
                 .iter()
-                .map(|i| cell.read_column(i).unwrap())
+                .map(|i| cell.read_column(&i.1).unwrap())
                 .collect::<Vec<String>>()
                 .join("|");
             println!("{row}");
@@ -102,12 +103,76 @@ impl BTreePage {
         Ok(())
     }
 
-    pub fn indicies_of_columns(&self, columns: Vec<String>, table_name: String) -> Vec<usize> {
+    pub fn read_cell_columns_where(
+        &self,
+        columns: Vec<(String, usize)>,
+        column: String,
+        column_value: String,
+        specific_columns: Vec<String>,
+    ) -> Result<()> {
+        // Before joining, need to filter cells that contain the requested
+        let mut result: Vec<Vec<(String, String)>> = Vec::new();
+        for cell in self.cells()?.iter() {
+            let row = columns
+                .iter()
+                .map(|i| {
+                    let value = cell.read_column(&i.1).unwrap();
+                    (i.0.clone(), value)
+                })
+                .collect::<Vec<(String, String)>>();
+            // .join("|");
+            // println!("{row:?}");
+            result.push(row);
+        }
+        // println!("Result {:?}", result);
+
+        let c: Vec<Vec<(String, String)>> = result
+            .into_iter()
+            .filter(|row| {
+                row.iter()
+                    .any(|(col, val)| *col == column && *val == column_value)
+            })
+            .collect();
+
+        let mut hmm = Vec::new();
+
+        for a in &c {
+            let z: Vec<(String, String)> = a
+                .iter()
+                .filter(|(col, _)| specific_columns.contains(col))
+                .cloned()
+                .collect();
+            hmm.push(z)
+        }
+
+
+        // let result: Vec<Vec<String>> = result.into_iter().filter(|arr| {
+        //     let column = arr[0].clone();
+        //     let column_val = arr[1].clone();
+        //     println!("{column_value}");
+        //     column_val == column_value
+        // }).collect();
+        //
+        // // println!("{:?}", result);
+        //
+        for thing in hmm {
+            let well: Vec<String> = thing.iter().map(|hmm| hmm.1.clone()).collect();
+            println!("{}", well.join("|"));
+        }
+        Ok(())
+    }
+
+    pub fn indicies_of_columns(
+        &self,
+        columns: Vec<String>,
+        table_name: String,
+    ) -> Vec<(String, usize)> {
         columns
             .into_iter()
             .map(|column| {
                 let schema = self.find_column(&table_name, &column).unwrap();
-                schema.column_position(&column).unwrap()
+                let column_idx = schema.column_position(&column).unwrap();
+                (column, column_idx)
             })
             .collect()
     }

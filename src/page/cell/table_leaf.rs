@@ -137,7 +137,6 @@ impl TableLeafCell {
     pub fn read_column(&self, column: &usize) -> Result<String> {
         let schema_vec = self.build_schema_vec()?;
         let column = String::from_utf8(schema_vec.clone().to_vec()[*column].clone())?;
-        // println!("{column}");
 
         Ok(column)
     }

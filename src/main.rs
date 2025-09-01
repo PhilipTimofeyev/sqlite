@@ -54,6 +54,40 @@ fn main() -> Result<()> {
                 bail!("Table not found")
             };
         }
+        cmd if cmd.to_lowercase().contains("where") => {
+            // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
+            // Everything between SELECT and FROM are the columns, retaining order
+            // Everything between FROM and WHERE are the tables
+            // After WHERE is the specific column
+
+            let mut file = File::open(&args[1])?;
+            let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
+
+            let root_page = pages.remove(0);
+
+            let split_command = command::split_command(cmd);
+            let table_name = command::parse_command_table_name(split_command.clone());
+            let specific_columns = command::parse_command_columns(split_command.clone());
+            let mut all_columns = specific_columns.clone();
+            let (column, column_value) = command::parse_command_where(split_command);
+
+            if !all_columns.contains(&column) {
+                all_columns.push(column.clone())
+            }
+
+            // println!("Columns {:?}", columns);
+            // println!("Table {:?}", table_name);
+            // println!("Column {column}, column value: {column_value}");
+
+            // Search root page cells for specific table, returning row id of table
+            let page_index = root_page.find_table_page(&table_name)?;
+            let page = &pages[page_index.unwrap() - 1];
+            //
+            // // Get column index of each specified column
+            let column_indexes = root_page.indicies_of_columns(all_columns, table_name);
+            //
+            page.read_cell_columns_where(column_indexes, column, column_value, specific_columns)?;
+        }
 
         cmd if cmd.to_lowercase().contains("select") => {
             // Example command: "SELECT name, color FROM oranges"
@@ -83,4 +117,3 @@ fn main() -> Result<()> {
 
     Ok(())
 }
-
