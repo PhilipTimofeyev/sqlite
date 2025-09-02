@@ -4,7 +4,6 @@ use codecrafters_sqlite::page::{self};
 use std::fs::File;
 
 fn main() -> Result<()> {
-    // Parse arguments
     let args = std::env::args().collect::<Vec<_>>();
     match args.len() {
         0 | 1 => bail!("Missing <database path> and <command>"),
@@ -53,9 +52,9 @@ fn main() -> Result<()> {
             // After WHERE is the specific column
 
             let split_command = command::split_command(cmd);
-            // println!("Split command{:?}", split_command);
-            let table_name = command::parse_command_table_name(&split_command);
+            let table_name = command::parse_command_table_name(&split_command)?;
             let columns = command::parse_command_columns(&split_command);
+            println!("{split_command:?}");
             let (where_column, where_column_value) = command::parse_command_where(split_command);
 
             // Search root page cells for specific table, returning row id of table
@@ -75,8 +74,8 @@ fn main() -> Result<()> {
             // Everything between SELECT and FROM are the columns, retaining order
             // Last word is table name
 
-            let mut split_command = command::split_command(cmd);
-            let table_name = split_command.remove(split_command.len() - 1);
+            let split_command = command::split_command(cmd);
+            let table_name = command::parse_command_table_name(&split_command)?;
             let columns = command::parse_command_columns(&split_command);
 
             // Search root page cells for specific table, returning row id of table

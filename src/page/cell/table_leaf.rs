@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::io::{Cursor, Read};
 
+// A Table Leaf Cell conceptually is like a row in a table
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TableLeafCell {

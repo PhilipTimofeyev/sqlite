@@ -1,3 +1,5 @@
+use anyhow::bail;
+
 pub fn split_command(command: &str) -> Vec<String> {
     command.split_whitespace().map(String::from).collect()
 }
@@ -22,20 +24,24 @@ fn keep_ascii_alphabet_chars(word: String) -> String {
         .collect()
 }
 
-pub fn parse_command_table_name(command: &[String]) -> String {
+pub fn parse_command_table_name(command: &[String]) -> Result<String, anyhow::Error> {
     let from_idx = command
         .iter()
         .position(|word| word.to_lowercase() == "from")
-        .unwrap();
+        .expect("FROM keyword is missing");
 
     let where_idx = command
         .iter()
         .position(|word| word.to_lowercase() == "where")
-        .unwrap();
+        .expect("WHERE keyword missing");
 
     let table = &command[from_idx + 1..where_idx];
 
-    table.first().expect("Table name not found").to_string()
+    if let Some(table_name) = table.first() {
+       Ok(table_name.to_string())
+    } else {
+        bail!("Table name not found")
+    }
 }
 
 pub fn parse_command_where(command: Vec<String>) -> (String, String) {
