@@ -1,8 +1,8 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TableLeafCell {
     payload_size: u8,
     pub row_id: u8, // Primary Key
@@ -139,6 +139,10 @@ impl TableLeafCell {
         let column = String::from_utf8(schema_vec.clone().to_vec()[*column].clone())?;
 
         Ok(column)
+    }
+
+    pub fn search_value(&self, column: &usize, value: &str) -> bool {
+        self.read_column(column).unwrap() == value
     }
 
     fn build_schema_vec(&self) -> Result<Vec<Vec<u8>>> {

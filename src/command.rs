@@ -2,7 +2,7 @@ pub fn split_command(command: &str) -> Vec<String> {
     command.split_whitespace().map(String::from).collect()
 }
 
-pub fn parse_command_columns(command: Vec<String>) -> Vec<String> {
+pub fn parse_command_columns(command: &[String]) -> Vec<String> {
     let from_idx = command
         .iter()
         .position(|word| word.to_lowercase() == "from")
@@ -22,7 +22,7 @@ fn keep_ascii_alphabet_chars(word: String) -> String {
         .collect()
 }
 
-pub fn parse_command_table_name(command: Vec<String>) -> String {
+pub fn parse_command_table_name(command: &[String]) -> String {
     let from_idx = command
         .iter()
         .position(|word| word.to_lowercase() == "from")
