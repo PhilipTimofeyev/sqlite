@@ -1,7 +1,7 @@
 use super::super::header::DatabaseHeader;
 use super::header::PageHeader;
 use crate::page::cell::table_leaf;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read};
 
@@ -145,15 +145,15 @@ impl BTreePage {
         table_names
     }
 
-    pub fn find_table_page(&self, table: &str) -> Result<Option<usize>> {
-        Ok(self
-            .cells()?
+    pub fn find_table_page(&self, table: &str) -> Result<usize> {
+        self.cells()?
             .iter()
             .find(|cell| {
                 cell.sqlite_schema()
                     .is_ok_and(|schema| schema.table_name == table.as_bytes())
             })
-            .map(|cell| cell.row_id as usize))
+            .map(|cell| cell.row_id as usize)
+            .ok_or_else(|| anyhow!("Table `{}` not found", table))
     }
 
     pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {

@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{bail, Result};
 
 pub fn split_command(command: &str) -> Vec<String> {
     command.split_whitespace().map(String::from).collect()
@@ -30,21 +30,16 @@ pub fn parse_command_table_name(command: &[String]) -> Result<String, anyhow::Er
         .position(|word| word.to_lowercase() == "from")
         .expect("FROM keyword is missing");
 
-    let where_idx = command
-        .iter()
-        .position(|word| word.to_lowercase() == "where")
-        .expect("WHERE keyword missing");
-
-    let table = &command[from_idx + 1..where_idx];
+    let table = &command[from_idx + 1..from_idx + 2];
 
     if let Some(table_name) = table.first() {
-       Ok(table_name.to_string())
+        Ok(table_name.to_string())
     } else {
         bail!("Table name not found")
     }
 }
 
-pub fn parse_command_where(command: Vec<String>) -> (String, String) {
+pub fn parse_command_where(command: &[String]) -> Result<(String, String), anyhow::Error> {
     let where_idx = command
         .iter()
         .position(|word| word.to_lowercase() == "where")
@@ -52,9 +47,15 @@ pub fn parse_command_where(command: Vec<String>) -> (String, String) {
 
     let where_cmd = &command[where_idx + 1..];
 
-    let column = where_cmd.first().expect("Not found").to_string();
-    let column_value = where_cmd.last().expect("Not found").to_string();
+    let column = where_cmd
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Column not found"))?
+        .to_string();
+    let column_value = where_cmd
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("Column value not found"))?;
+
     let column_value = column_value.replace("'", "");
 
-    (column, column_value)
+    Ok((column, column_value))
 }

@@ -37,13 +37,9 @@ fn main() -> Result<()> {
             let mut split_command = command::split_command(cmd);
             let table_name = split_command.remove(split_command.len() - 1);
             let page_index = root_page.find_table_page(&table_name)?;
+            let page = pages.remove(page_index - 1);
 
-            if let Some(page_index) = page_index {
-                let page = pages.remove(page_index - 1);
-                println!("{}", page.cell_pointer_array.len())
-            } else {
-                bail!("Table not found")
-            };
+            println!("{}", page.cell_pointer_array.len())
         }
         cmd if cmd.to_lowercase().contains("where") => {
             // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
@@ -54,12 +50,11 @@ fn main() -> Result<()> {
             let split_command = command::split_command(cmd);
             let table_name = command::parse_command_table_name(&split_command)?;
             let columns = command::parse_command_columns(&split_command);
-            println!("{split_command:?}");
-            let (where_column, where_column_value) = command::parse_command_where(split_command);
+            let (where_column, where_column_value) = command::parse_command_where(&split_command)?;
 
             // Search root page cells for specific table, returning row id of table
             let page_index = root_page.find_table_page(&table_name)?;
-            let page = &pages[page_index.unwrap() - 1];
+            let page = &pages[page_index - 1];
 
             // Get column index of each specified column
             let column_index = root_page.column_index(&where_column, &table_name);
@@ -80,7 +75,7 @@ fn main() -> Result<()> {
 
             // Search root page cells for specific table, returning row id of table
             let page_index = root_page.find_table_page(&table_name)?;
-            let page = &pages[page_index.unwrap() - 1];
+            let page = &pages[page_index - 1];
 
             // Get column index of each specified column
             let column_indexes = root_page.indicies_of_columns(columns, table_name);
