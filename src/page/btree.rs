@@ -81,14 +81,18 @@ impl BTreePage {
         let mut file = Cursor::new(self.data.clone());
         // println!("page header {:?}", self.page_header);
         // println!("DATA {:?}", file);
-        // println!("{:?}", self.cell_pointer_array);
         let mut cell_pointers_peek = self.cell_pointer_array.iter().rev().peekable();
         let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
 
         // file.set_position(cell_pointers_peek.peek().unwrap().to_owned().to_owned() as u64);
         // println!("HERE {:?}", self.page_header);
         while let Some(pointer) = cell_pointers_peek.next() {
-            file.set_position(*pointer as u64 - 100);
+            // Offset when root B Tree Page
+            if self.file_header.is_some() {
+                file.set_position(*pointer as u64 - 100);
+            } else {
+                file.set_position(*pointer as u64);
+            }
 
             if let Some(next_pointer) = cell_pointers_peek.peek() {
                 let num_bytes_to_read = *next_pointer - pointer;
@@ -97,14 +101,18 @@ impl BTreePage {
                 file.read_exact(&mut buf)?;
                 // println!("First buf{:?}", buf);
                 let table_leaf_cell = table_leaf::TableLeafCell::try_from(&buf[..])?;
+                // println!("{:?}", table_leaf_cell);
                 cells.push(table_leaf_cell)
             } else {
                 let mut buf = Vec::new();
                 file.read_to_end(&mut buf)?;
+                // println!("\n{:?}", buf);
                 let table_leaf_cell = table_leaf::TableLeafCell::try_from(&buf[..])?;
                 cells.push(table_leaf_cell);
             }
         }
+
+        // println!("{:?}", cells);
 
         Ok(cells)
     }
@@ -189,7 +197,7 @@ impl BTreePage {
                 .map(|i| cell.read_column(i).unwrap())
                 .collect::<Vec<String>>()
                 .join("|");
-            // println!("{row}");
+            println!("{row}");
         }
 
         Ok(())
@@ -265,23 +273,4 @@ pub fn display_string_vector(vector: Vec<String>) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
-    for i in 0..9 {
-        let Some(b) = data.get(i) else {
-            panic!("Not enough bytes for varint");
-        };
-        if b & 0x80 == 0 {
-            // Last byte of the VARINT
-            let mut value = 0u64;
-            for b in data[..=i].iter() {
-                value = (value << 7) | (b & 0x7f) as u64;
-            }
-            return Some((value, &data[i + 1..]));
-        }
-    }
-
-    // More than 7 bytes is invalid.
-    panic!("Too many bytes for varint");
 }

@@ -78,12 +78,12 @@ fn main() -> Result<()> {
 
             // Search root page cells for specific table, returning row id of table
             let page_index = root_page.find_table_page(&table_name)?;
+
             let page = &pages[page_index - 1];
 
             // Get column index of each specified column
             let column_indexes = root_page.indicies_of_columns(columns, table_name);
             let cells = page.cells()?;
-
             page.read_cell_columns(column_indexes, cells)?;
         }
         _ => bail!("Missing or invalid command passed: {}", command),
