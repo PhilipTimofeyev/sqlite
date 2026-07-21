@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use std::io::Cursor;
 use std::io::Read;
 
@@ -18,21 +18,18 @@ impl PageHeader {
         let mut page_type_buf = [0; 1];
         file.read_exact(&mut page_type_buf)?;
 
-        let page_type = PageType::from_bytes(&page_type_buf);
-        match page_type {
-            PageType::TableLeaf | PageType::IndexLeaf => {
-                let mut leaf_header = [0; 8];
-                leaf_header[0] = page_type_buf[0];
-                file.read_exact(&mut leaf_header[1..])?;
-                PageHeader::try_from(&leaf_header[..])
-            }
-            PageType::TableInterior | PageType::IndexInterior => {
-                let mut interior_header = [0; 12];
-                interior_header[0] = page_type_buf[0];
-                file.read_exact(&mut interior_header[1..])?;
-                todo!()
-            }
-        }
+        let page_type = PageType::from_bytes(&page_type_buf)?;
+
+        let header_size = match page_type {
+            PageType::TableLeaf | PageType::IndexLeaf => 8,
+            PageType::TableInterior | PageType::IndexInterior => 12,
+        };
+
+        let mut buf = vec![0; header_size];
+        buf[0] = page_type_buf[0];
+        file.read_exact(&mut buf[1..])?;
+
+        PageHeader::try_from(buf.as_slice())
     }
 }
 
@@ -56,22 +53,18 @@ impl TryFrom<&[u8]> for PageHeader {
         bytes.read_exact(&mut cell_count)?;
         bytes.read_exact(&mut cell_content_area)?;
         bytes.read_exact(&mut fragment_free_bytes)?;
-        let page_number_result = bytes.read_exact(&mut page_number);
 
+        let _ = bytes.read_exact(&mut page_number);
         let page_type = PageType::from_bytes(&page_type);
         let first_free_block = u16::from_be_bytes(first_free_block);
         let cell_count = u16::from_be_bytes(cell_count);
         let cell_content_area_start = u16::from_be_bytes(cell_content_area);
         let fragment_free_bytes = u8::from_be_bytes(fragment_free_bytes);
 
-        let page_number = if page_number_result.is_ok() {
-            Some(u32::from_be_bytes(page_number))
-        } else {
-            None
-        };
+        let page_number = Some(u32::from_be_bytes(page_number));
 
         let page_header = PageHeader {
-            page_type,
+            page_type: page_type?,
             first_free_block,
             cell_count,
             cell_content_area_start,
@@ -93,10 +86,14 @@ enum PageType {
 }
 
 impl PageType {
-    fn from_bytes(bytes: &[u8]) -> PageType {
+    fn from_bytes(bytes: &[u8]) -> Result<PageType> {
+        // println!("{bytes:?}");
         match bytes[0] {
-            13 => PageType::TableLeaf,
-            _ => todo!(),
+            2 => Ok(PageType::IndexInterior),
+            5 => Ok(PageType::TableInterior),
+            10 => Ok(PageType::IndexLeaf),
+            13 => Ok(PageType::TableLeaf),
+            _ => bail!("Invalid page type byte: {}", bytes[0]),
         }
     }
 }

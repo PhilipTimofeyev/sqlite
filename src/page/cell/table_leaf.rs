@@ -5,9 +5,8 @@ use std::io::{Cursor, Read};
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TableLeafCell {
-    payload_size: u8,
-    pub row_id: u8, // Primary Key
-    header: Vec<u8>,
+    payload_size: u64,
+    pub row_id: u64, // Primary Key
     payload: Vec<u8>,
 }
 
@@ -33,6 +32,7 @@ impl SerialType {
 }
 
 fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
+    // println!("{:?}", data);
     for i in 0..9 {
         let Some(b) = data.get(i) else {
             panic!("Not enough bytes for varint");
@@ -69,26 +69,29 @@ impl TryFrom<&[u8]> for TableLeafCell {
     type Error = anyhow::Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self> {
-        let (payload_size, mut data) = parse_varint(bytes).unwrap();
+        let (payload_size, data) = parse_varint(bytes).unwrap();
+        let (row_id, data) = parse_varint(data).unwrap();
 
-        let mut row_id = [0; 1];
-        let mut header_size = [0; 1];
+        // let mut row_id = [0; 1];
+        // let mut header_size = [0; 1];
 
-        let _ = data.read_exact(&mut row_id);
-        let _ = data.read_exact(&mut header_size);
+        // let _ = data.read_exact(&mut row_id);
+        // let _ = data.read_exact(&mut header_size);
+        //
+        // let header_size = header_size[0] as usize;
 
-        let header_size = header_size[0] as usize;
-
-        let mut header = vec![header_size as u8; header_size];
-        let _ = data.read_exact(&mut header[1..]);
-        let mut payload = Vec::new();
-        let _ = data.read_to_end(&mut payload);
-
+        // let mut header = vec![header_size as u8; header_size];
+        // let _ = data.read_exact(&mut header[1..]);
+        let payload = &data[0..payload_size as usize];
+        // println!("Payload size {payload_size:?}");
+        // println!("Payload size hmm {:?}", payload.len());
+        // let mut payload = Vec::new();
+        // let _ = data.read_to_end(&mut payload);
+        //
         Ok(TableLeafCell {
-            payload_size: payload_size.try_into()?,
-            row_id: row_id[0],
-            header,
-            payload,
+            payload_size,
+            row_id,
+            payload: payload.to_vec(),
         })
     }
 }
@@ -146,10 +149,12 @@ impl TableLeafCell {
         self.read_column(column).unwrap() == value
     }
 
-    fn build_schema_vec(&self) -> Result<Vec<Vec<u8>>> {
+    pub fn build_schema_vec(&self) -> Result<Vec<Vec<u8>>> {
         let mut serial_types = Vec::new();
 
-        let varints = parse_header_varints(&self.header[1..]);
+        let (header_size, bytes) = parse_varint(&self.payload).unwrap();
+        let varints = parse_header_varints(&bytes[0..header_size as usize - 1]);
+        // println!("varints {:?}", varints);
 
         for code in varints {
             let serial_type = SerialType::from_code(code);
@@ -157,6 +162,7 @@ impl TableLeafCell {
         }
 
         let mut cursor = Cursor::new(self.payload.clone());
+        cursor.set_position(header_size);
         let mut schema_vec = Vec::new();
 
         for serial_type in &serial_types {
