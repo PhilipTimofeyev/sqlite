@@ -8,6 +8,7 @@ pub struct TableLeafCell {
     payload_size: u64,
     pub row_id: u64, // Primary Key
     payload: Vec<u8>,
+    overflow_page_num: Option<u32>,
 }
 
 #[allow(dead_code)]
@@ -31,7 +32,7 @@ impl SerialType {
     }
 }
 
-fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
+pub fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
     // println!("{:?}", data);
     for i in 0..9 {
         let Some(b) = data.get(i) else {
@@ -71,27 +72,13 @@ impl TryFrom<&[u8]> for TableLeafCell {
     fn try_from(bytes: &[u8]) -> Result<Self> {
         let (payload_size, data) = parse_varint(bytes).unwrap();
         let (row_id, data) = parse_varint(data).unwrap();
-
-        // let mut row_id = [0; 1];
-        // let mut header_size = [0; 1];
-
-        // let _ = data.read_exact(&mut row_id);
-        // let _ = data.read_exact(&mut header_size);
-        //
-        // let header_size = header_size[0] as usize;
-
-        // let mut header = vec![header_size as u8; header_size];
-        // let _ = data.read_exact(&mut header[1..]);
         let payload = &data[0..payload_size as usize];
-        // println!("Payload size {payload_size:?}");
-        // println!("Payload size hmm {:?}", payload.len());
-        // let mut payload = Vec::new();
-        // let _ = data.read_to_end(&mut payload);
-        //
+
         Ok(TableLeafCell {
             payload_size,
             row_id,
             payload: payload.to_vec(),
+            overflow_page_num: None,
         })
     }
 }
@@ -100,7 +87,7 @@ impl TryFrom<&[u8]> for TableLeafCell {
 #[derive(Debug)]
 pub struct Schema {
     schema_type: Vec<u8>,
-    name: Vec<u8>,
+    pub name: Vec<u8>,
     pub table_name: Vec<u8>,
     root_page: Vec<u8>,
     pub sql: Vec<u8>,
@@ -192,6 +179,8 @@ impl TableLeafCell {
         let schema_type = schema_vec.remove(0);
         let name = schema_vec.remove(0);
         let table_name = schema_vec.remove(0);
+        // println!("{}", String::from_utf8(name.clone()).unwrap());
+        // println!("{}", String::from_utf8(table_name.clone()).unwrap());
         let root_page = schema_vec.remove(0);
         let sql: Vec<u8> = schema_vec
             .into_iter()

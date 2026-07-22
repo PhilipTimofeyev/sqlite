@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
+use codecrafters_sqlite::page::btree::BTreePage;
 use codecrafters_sqlite::page::{self};
 use std::fs::File;
 
@@ -13,10 +14,8 @@ fn main() -> Result<()> {
 
     let command = &args[2];
     let mut file = File::open(&args[1])?;
-    let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
-    let root_page = pages.remove(0);
-
-    println!("{}", root_page.file_header.as_ref().unwrap().num_of_pages());
+    // let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
+    let root_page = page::btree::BTreePage::build_root_page(&mut file)?;
 
     match command.as_str() {
         ".dbinfo" => {
@@ -40,52 +39,56 @@ fn main() -> Result<()> {
             let mut split_command = command::split_command(cmd);
             let table_name = split_command.remove(split_command.len() - 1);
             let page_index = root_page.find_table_page(&table_name)?;
-            let page = pages.remove(page_index - 1);
 
-            println!("{}", page.cell_pointer_array.len())
+            println!("page index {:?}", page_index);
+            // let page = pages.remove(page_index - 1);
+            //
+            // println!("{}", page.cell_pointer_array.len())
         }
-        cmd if cmd.to_lowercase().contains("where") => {
-            // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
-            // Everything between SELECT and FROM are the columns, retaining order
-            // Everything between FROM and WHERE are the tables
-            // After WHERE is the specific column
-
-            let split_command = command::split_command(cmd);
-            let table_name = command::parse_command_table_name(&split_command)?;
-            let columns = command::parse_command_columns(&split_command);
-            let (where_column, where_column_value) = command::parse_command_where(&split_command)?;
-
-            // Search root page cells for specific table, returning row id of table
-            let page_index = root_page.find_table_page(&table_name)?;
-            let page = &pages[page_index - 1];
-
-            // Get column index of each specified column
-            let column_index = root_page.column_index(&where_column, &table_name);
-            let column_indexes = root_page.indicies_of_columns(columns.clone(), table_name);
-
-            let cells = page.find_cells(&column_index, &where_column_value);
-            page.read_cell_columns(column_indexes, cells)?;
-        }
-
-        cmd if cmd.to_lowercase().contains("select") => {
-            // Example command: "SELECT name, color FROM oranges"
-            // Everything between SELECT and FROM are the columns, retaining order
-            // Last word is table name
-
-            let split_command = command::split_command(cmd);
-            let table_name = command::parse_command_table_name(&split_command)?;
-            let columns = command::parse_command_columns(&split_command);
-
-            // Search root page cells for specific table, returning row id of table
-            let page_index = root_page.find_table_page(&table_name)?;
-
-            let page = &pages[page_index - 1];
-
-            // Get column index of each specified column
-            let column_indexes = root_page.indicies_of_columns(columns, table_name);
-            let cells = page.cells()?;
-            page.read_cell_columns(column_indexes, cells)?;
-        }
+        // cmd if cmd.to_lowercase().contains("where") => {
+        //     // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
+        //     // Everything between SELECT and FROM are the columns, retaining order
+        //     // Everything between FROM and WHERE are the tables
+        //     // After WHERE is the specific column
+        //
+        //     let split_command = command::split_command(cmd);
+        //     let table_name = command::parse_command_table_name(&split_command)?;
+        //     let columns = command::parse_command_columns(&split_command);
+        //     let (where_column, where_column_value) = command::parse_command_where(&split_command)?;
+        //
+        //     // Search root page cells for specific table, returning row id of table
+        //     let page_index = root_page.find_table_page(&table_name)?;
+        //     let page = &pages[page_index - 1];
+        //
+        //     // Get column index of each specified column
+        //     let column_index = root_page.column_index(&where_column, &table_name);
+        //     let column_indexes = root_page.indicies_of_columns(columns.clone(), table_name);
+        //
+        //     let cells = page.find_cells(&column_index, &where_column_value);
+        //     page.read_cell_columns(column_indexes, cells)?;
+        // }
+        //
+        // cmd if cmd.to_lowercase().contains("select") => {
+        //     // Example command: "SELECT name, color FROM oranges"
+        //     // Everything between SELECT and FROM are the columns, retaining order
+        //     // Last word is table name
+        //
+        //     let split_command = command::split_command(cmd);
+        //     let table_name = command::parse_command_table_name(&split_command)?;
+        //     let columns = command::parse_command_columns(&split_command);
+        //
+        //     // Search root page cells for specific table, returning row id of table
+        //     let page_index = root_page.find_table_page(&table_name)?;
+        //
+        //     println!("page index {:?}", page_index);
+        //
+        //     let page = &pages[page_index - 1];
+        //
+        //     // Get column index of each specified column
+        //     let column_indexes = root_page.indicies_of_columns(columns, table_name);
+        //     let cells = page.cells()?;
+        //     page.read_cell_columns(column_indexes, cells)?;
+        // }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 

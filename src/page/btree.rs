@@ -1,6 +1,6 @@
 use super::super::header::DatabaseHeader;
 use super::header::PageHeader;
-use crate::page::cell::table_leaf;
+use crate::page::cell::table_leaf::{self, parse_varint, TableLeafCell};
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
@@ -77,15 +77,16 @@ impl BTreePage {
         }
     }
 
-    pub fn cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
+    // DELETE
+    pub fn _old_cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
         let mut file = Cursor::new(self.data.clone());
-        // println!("page header {:?}", self.page_header);
+        println!("pointer array {:?}", self.cell_pointer_array);
         // println!("DATA {:?}", file);
         let mut cell_pointers_peek = self.cell_pointer_array.iter().rev().peekable();
         let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
 
         // file.set_position(cell_pointers_peek.peek().unwrap().to_owned().to_owned() as u64);
-        // println!("HERE {:?}", self.page_header);
+        println!("HERE {:?}", self.page_header);
         while let Some(pointer) = cell_pointers_peek.next() {
             // Offset when root B Tree Page
             if self.file_header.is_some() {
@@ -96,10 +97,12 @@ impl BTreePage {
 
             if let Some(next_pointer) = cell_pointers_peek.peek() {
                 let num_bytes_to_read = *next_pointer - pointer;
-                // println!("bytes to read {}", num_bytes_to_read);
+                println!("next_pointer {}", next_pointer);
+                println!("pointer {}", pointer);
+                println!("bytes to read {}", num_bytes_to_read);
                 let mut buf = vec![0; num_bytes_to_read as usize];
-                file.read_exact(&mut buf)?;
                 // println!("First buf{:?}", buf);
+                file.read_exact(&mut buf)?;
                 let table_leaf_cell = table_leaf::TableLeafCell::try_from(&buf[..])?;
                 // println!("{:?}", table_leaf_cell);
                 cells.push(table_leaf_cell)
@@ -117,65 +120,22 @@ impl BTreePage {
         Ok(cells)
     }
 
-    //    pub fn cell(&self) {
-    //        // THIS NEEDS TO LOOP AND CREATE CELLS, PARSING VARINTS AND BUILDING CELLS UNTIL ALL BYTES
-    //        // HAVE BEEN READ
-    //        let mut file = Cursor::new(self.data.clone());
-    //        // println!("{:?}", self.data);
-    //        let mut cell_pointers_peek = self.cell_pointer_array.iter().peekable();
-    //        // let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
-    //
-    //        // println!("HERE {:?}", self.data);
-    //        let first_pointer = self.cell_pointer_array[0];
-    //        println!("POINTER ARRAY{:?}", self.cell_pointer_array);
-    //
-    //        for pointer in self.cell_pointer_array.iter().as_slice() {
-    //            // println!("first pointer {:?}", first_pointer);
-    //            // println!("pointer {:?}", pointer);
-    //                // let hmm = first_pointer - pointer;
-    //                // println!("well {hmm:?}");
-    //                let table_leaf_cell =
-    //                    table_leaf::TableLeafCell::try_from(&self.data[*pointer as usize..]);
-    //                // println!("{:?}", table_leaf_cell);
-    //                // let well = table_leaf_cell.unwrap().build_schema_vec();
-    //                // // println!("First buf{:?}", table_leaf_cell);
-    //                // for a in well.unwrap() {
-    //                //     println!("{:?}", String::from_utf8(a))
-    //                // }
-    //
-    //        }
-    //        // let pointer = cell_pointers_peek.next().unwrap();
-    //        // println!("cell content {:?}", self.cell_content_area);
-    //        // // file.set_position(*pointer as u64);
-    //        // // let (payload, bytes) = parse_varint(&self.cell_content_area).unwrap();
-    //        // // let (row_id, bytes) = parse_varint(bytes).unwrap();
-    //        //
-    //        // for pointer in self.cell_pointer_array.clone() {
-    //        //     println!("pointer {:?}", pointer);
-    //        // }
-    //
-    //        // println!("payload {:?}", payload);
-    //        // println!("row_id {:?}", row_id);
-    //        // println!("CUrrent {pointer:?}");
-    //        // let next_pointer = cell_pointers_peek.peek().unwrap();
-    //        // println!("NExt {next_pointer:?}");
-    //        // let num_bytes_to_read = *next_pointer - pointer;
-    //        // let mut buf = vec![0; num_bytes_to_read as usize];
-    //        // println!("{num_bytes_to_read:?}");
-    //        // file.read_exact(&mut buf)?;
-    //        // let hmm = parse_varint(&buf);
-    //        // // println!("varint{:?}", hmm);
-    //        // // println!("First buf{:?}", buf);
-    //        // let table_leaf_cell = table_leaf::TableLeafCell::try_from(&self.cell_content_area[..]);
-    //        // let well = table_leaf_cell.unwrap().build_schema_vec();
-    //        // // println!("First buf{:?}", table_leaf_cell);
-    //        // for a in well.unwrap() {
-    //        //     println!("{:?}", String::from_utf8(a))
-    //        // }
-    //        // println!("{:?}", table_leaf_cell.unwrap());
-    // ; // // todo!();
-    //         // Ok(table_leaf_cell)
-    //    }
+    pub fn cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
+        let cell_pointers = &self.cell_pointer_array;
+
+        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
+        for pointer in cell_pointers {
+            let offset = if self.file_header.is_some() {
+                (pointer - 100) as usize
+            } else {
+                *pointer as usize
+            };
+            let cell = TableLeafCell::try_from(&self.data[offset..])?;
+            cells.push(cell);
+        }
+
+        Ok(cells)
+    }
 
     pub fn find_cells(&self, column: &usize, value: &str) -> Vec<table_leaf::TableLeafCell> {
         self.cells()

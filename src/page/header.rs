@@ -19,7 +19,6 @@ impl PageHeader {
         file.read_exact(&mut page_type_buf)?;
 
         let page_type = PageType::from_bytes(&page_type_buf)?;
-        println!("{:?}", page_type);
 
         let header_size = match page_type {
             PageType::TableLeaf | PageType::IndexLeaf => 8,
@@ -63,7 +62,6 @@ impl TryFrom<&[u8]> for PageHeader {
         let fragment_free_bytes = u8::from_be_bytes(fragment_free_bytes);
 
         let page_number = Some(u32::from_be_bytes(page_number));
-        println!("numer {:?}", page_number);
 
         let page_header = PageHeader {
             page_type: page_type?,
