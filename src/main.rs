@@ -1,9 +1,7 @@
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
-use codecrafters_sqlite::page::btree::BTreePage;
 use codecrafters_sqlite::page::{self};
 use std::fs::File;
-use std::io::{Cursor, Read};
 
 fn main() -> Result<()> {
     let args = std::env::args().collect::<Vec<_>>();
@@ -17,6 +15,8 @@ fn main() -> Result<()> {
     let mut file = File::open(&args[1])?;
     let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
     let root_page = pages.remove(0);
+
+    println!("{}", root_page.file_header.as_ref().unwrap().num_of_pages());
 
     match command.as_str() {
         ".dbinfo" => {

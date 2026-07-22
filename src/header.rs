@@ -13,7 +13,7 @@ pub struct DatabaseHeader {
     min_embedded_payload: [u8; 1], // Must be 32
     leaf_payload: [u8; 1],         // Must be 32
     file_change_counter: [u8; 4],
-    in_header_database_size: [u8; 4],
+    pub in_header_database_size: [u8; 4],
     page_num_first_freelist_trunk_page: [u8; 4],
     total_freelist_pages: [u8; 4],
     schema_cookie: [u8; 4],
@@ -110,5 +110,11 @@ impl TryFrom<&[u8]> for DatabaseHeader {
             version_valid_for_number,
             sqlite_version,
         })
+    }
+}
+
+impl DatabaseHeader {
+    pub fn num_of_pages(&self) -> u32 {
+        u32::from_be_bytes(self.in_header_database_size)
     }
 }
