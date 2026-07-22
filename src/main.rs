@@ -38,22 +38,13 @@ fn main() -> Result<()> {
 
             let mut split_command = command::split_command(cmd);
             let table_name = split_command.remove(split_command.len() - 1);
-            let mut page_number = root_page.find_table_page(&table_name)?;
-            let page_number = page_number.remove(0) as usize;
+            let page_number = root_page.find_table_page(&table_name)?;
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
-            //
-            // println!("page index {:?}", page_number);
-            println!("page_number {:?}", page_number);
-            // println!("page size {:?}", page_size);
-            ////
+
             let page =
                 page::btree::BTreePage::build_page(&mut file, page_size as usize, page_number)?;
-            // println!("{:?}", page.cell_pointer_array.len());
-            println!("{:?}", page);
 
-            // let page = pages.remove(page_index - 1);
-            //
-            // println!("{}", page.cell_pointer_array.len())
+            println!("{}", page.cell_pointer_array.len())
         }
         // cmd if cmd.to_lowercase().contains("where") => {
         //     // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
@@ -88,9 +79,13 @@ fn main() -> Result<()> {
             let columns = command::parse_command_columns(&split_command);
 
             // Search root page cells for specific table, returning row id of table
-            let page_index = root_page.find_table_page(&table_name)?;
+            let page_number = root_page.find_table_page(&table_name)? as usize;
+            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
 
-            println!("page index {:?}", page_index);
+            println!("page index {:?}", page_number);
+
+            page::btree::traverse_b_tree(&mut file, page_size, page_number);
+
             //
             // let page = &pages[page_index - 1];
             //

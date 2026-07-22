@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::io::{Cursor, Read};
 
 // A Table Leaf Cell conceptually is like a row in a table
@@ -11,22 +11,48 @@ pub struct TableLeafCell {
     overflow_page_num: Option<u32>,
 }
 
+#[derive(Debug, Clone)]
+pub struct TableInteriorCell {
+    pub left_child: u32,
+    pub row_id: u64, // Primary Key
+}
+
+impl TryFrom<&[u8]> for TableInteriorCell {
+    type Error = anyhow::Error;
+
+    fn try_from(bytes: &[u8]) -> Result<Self> {
+        let left_child: u32 = u32::from_be_bytes(bytes[0..4].try_into().unwrap());
+        let (row_id, _data) = parse_varint(&bytes[4..]).unwrap();
+
+        Ok(TableInteriorCell { left_child, row_id })
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug)]
 enum SerialType {
     Null,
-    Integer(i64),
+    Integer(usize),
     Blob(usize),
     Text(usize),
+}
+
+#[derive(Debug)]
+pub enum SerialValue {
+    Null,
+    Integer(u64),
+    Float(f64),
+    Text(String),
+    Blob(Vec<u8>),
 }
 
 impl SerialType {
     fn from_code(code: u64) -> Self {
         match code {
-            0 => SerialType::Null,
-            1..7 => SerialType::Integer(1),
+            n @ 1..7 => SerialType::Integer(n as usize),
             n if n >= 12 && n % 2 == 0 => SerialType::Blob(((n - 12) / 2) as usize),
             n if n >= 13 && n % 2 == 1 => SerialType::Text(((n - 13) / 2) as usize),
+            0 => SerialType::Null,
             _ => todo!(),
         }
     }
@@ -86,21 +112,21 @@ impl TryFrom<&[u8]> for TableLeafCell {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct Schema {
-    schema_type: Vec<u8>,
-    pub name: Vec<u8>,
-    pub table_name: Vec<u8>,
-    pub root_page: Vec<u8>,
-    pub sql: Vec<u8>,
+    schema_type: String,
+    pub name: String,
+    pub table_name: String,
+    pub root_page: usize,
+    pub sql: String,
 }
 
 impl Schema {
-    pub fn sql_contains_str(&self, text: &str) -> bool {
-        let text = text.as_bytes();
-        self.sql.windows(text.len()).any(|window| window == text)
-    }
+    // pub fn sql_contains_str(&self, text: &str) -> bool {
+    //     let text = text.as_bytes();
+    //     self.sql.windows(text.len()).any(|window| window == text)
+    // }
 
     pub fn column_position(&self, column_name: &str) -> Result<usize> {
-        let schema_sql = String::from_utf8(self.sql.clone())?;
+        let schema_sql = self.sql.clone();
         let columns = schema_sql.split(&['(', ')'][..]).collect::<Vec<&str>>();
         let columns = columns[..columns.len() - 1]
             .last()
@@ -125,18 +151,18 @@ enum SchemaType {
 }
 
 impl TableLeafCell {
-    pub fn read_column(&self, column: &usize) -> Result<String> {
-        let schema_vec = self.build_schema_vec()?;
-        let column = String::from_utf8(schema_vec.clone().to_vec()[*column].clone())?;
+    // pub fn read_column(&self, column: usize) -> Result<String> {
+    //     let schema_vec = self.build_schema_vec()?;
+    //     let column = String::from_utf8(schema_vec.clone().to_vec()[column].clone())?;
+    //
+    //     Ok(column)
+    // }
 
-        Ok(column)
-    }
+    // pub fn search_value(&self, column: usize, value: &str) -> bool {
+    //     self.read_column(column).unwrap() == value
+    // }
 
-    pub fn search_value(&self, column: &usize, value: &str) -> bool {
-        self.read_column(column).unwrap() == value
-    }
-
-    pub fn build_schema_vec(&self) -> Result<Vec<Vec<u8>>> {
+    pub fn build_schema_vec(&self) -> Result<Vec<SerialValue>> {
         let mut serial_types = Vec::new();
 
         let (header_size, bytes) = parse_varint(&self.payload).unwrap();
@@ -154,20 +180,36 @@ impl TableLeafCell {
 
         for serial_type in &serial_types {
             match serial_type {
+                // NEEDS TO HANDLE 0 to 8 bytes
                 SerialType::Integer(bytes) => {
-                    let mut buf = vec![0; *bytes as usize];
+                    // NEED TO ACCEPT 1 THROUGH 8 Bytes
+                    println!("{:?}", bytes);
+                    let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
-                    schema_vec.push(buf);
+                    let value = buf.remove(0) as u64;
+                    schema_vec.push(SerialValue::Integer(value));
                 }
                 SerialType::Text(bytes) => {
                     let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
-                    schema_vec.push(buf);
+                    // println!("HERE {:?}", buf);
+                    let value = String::from_utf8(buf.clone()).unwrap();
+                    schema_vec.push(SerialValue::Text(value));
+                }
+                SerialType::Blob(bytes) => {
+                    let mut buf = vec![0; *bytes];
+                    cursor.read_exact(&mut buf)?;
+                    println!("HERE {:?}", buf);
+                    // let value = String::from_utf8(buf.clone()).unwrap();
+                    schema_vec.push(SerialValue::Blob(buf));
                 }
                 SerialType::Null => {
-                    schema_vec.push(vec![0]);
+                    schema_vec.push(SerialValue::Null);
                 }
-                _ => todo!(),
+                _ => {
+                    println!("Other");
+                    todo!()
+                }
             }
         }
 
@@ -176,18 +218,31 @@ impl TableLeafCell {
 
     pub fn sqlite_schema(&self) -> Result<Schema> {
         let mut schema_vec = self.build_schema_vec()?;
-        let schema_type = schema_vec.remove(0);
-        let name = schema_vec.remove(0);
-        let table_name = schema_vec.remove(0);
-        // println!("{}", String::from_utf8(name.clone()).unwrap());
-        // println!("{}", String::from_utf8(table_name.clone()).unwrap());
-        let root_page = schema_vec.remove(0);
-        let sql: Vec<u8> = schema_vec
-            .into_iter()
-            .flatten()
-            .collect::<Vec<u8>>()
-            .drain(..)
-            .collect();
+
+        let schema_type = match schema_vec.remove(0) {
+            SerialValue::Text(value) => value,
+            _ => return Err(anyhow!("Expected TEXT for schema type")),
+        };
+
+        let name = match schema_vec.remove(0) {
+            SerialValue::Text(value) => value,
+            _ => return Err(anyhow!("Expected TEXT for name")),
+        };
+
+        let table_name = match schema_vec.remove(0) {
+            SerialValue::Text(value) => value,
+            _ => return Err(anyhow!("Expected TEXT for table name")),
+        };
+
+        let root_page = match schema_vec.remove(0) {
+            SerialValue::Integer(value) => value as usize,
+            _ => return Err(anyhow!("Expected INTEGER for root page")),
+        };
+
+        let sql = match schema_vec.remove(0) {
+            SerialValue::Text(value) => value,
+            _ => return Err(anyhow!("Expected TEXT for SQL")),
+        };
 
         Ok(Schema {
             schema_type,

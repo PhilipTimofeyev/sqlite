@@ -1,6 +1,6 @@
 use super::super::header::DatabaseHeader;
-use super::header::PageHeader;
-use crate::page::cell::table_leaf::{self, parse_varint, TableLeafCell};
+use super::header::{PageHeader, PageType};
+use crate::page::cell::table_leaf::{self, parse_varint, TableInteriorCell, TableLeafCell};
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -150,83 +150,100 @@ impl BTreePage {
         Ok(cells)
     }
 
-    pub fn find_cells(&self, column: &usize, value: &str) -> Vec<table_leaf::TableLeafCell> {
-        self.cells()
-            .unwrap()
-            .iter()
-            .filter(|cell| cell.search_value(column, value))
-            .cloned()
-            .collect()
-    }
+    pub fn cells_int(&self) -> Result<Vec<table_leaf::TableInteriorCell>> {
+        let cell_pointers = &self.cell_pointer_array;
 
-    pub fn read_cell_columns(
-        &self,
-        columns: Vec<usize>,
-        cells: Vec<table_leaf::TableLeafCell>,
-    ) -> Result<()> {
-        for cell in cells {
-            let row = columns
-                .iter()
-                .map(|i| cell.read_column(i).unwrap())
-                .collect::<Vec<String>>()
-                .join("|");
-            println!("{row}");
+        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
+        for pointer in cell_pointers {
+            let offset = if self.file_header.is_some() {
+                (pointer - 100) as usize
+            } else {
+                *pointer as usize
+            };
+            let cell = TableInteriorCell::try_from(&self.data[offset..])?;
+            cells.push(cell);
         }
 
-        Ok(())
+        Ok(cells)
     }
 
-    pub fn indicies_of_columns(&self, columns: Vec<String>, table_name: String) -> Vec<usize> {
-        columns
-            .into_iter()
-            .map(|column| {
-                let schema = self.find_column(&table_name, &column).unwrap();
-                schema.column_position(&column).unwrap()
-            })
-            .collect()
-    }
+    // pub fn find_cells(&self, column: &usize, value: &str) -> Vec<table_leaf::TableLeafCell> {
+    //     self.cells()
+    //         .unwrap()
+    //         .iter()
+    //         .filter(|cell| cell.search_value(*column, value))
+    //         .cloned()
+    //         .collect()
+    // }
 
-    pub fn column_index(&self, column: &str, table_name: &str) -> usize {
-        let schema = self.find_column(table_name, column).unwrap();
-        schema.column_position(column).unwrap()
-    }
+    // pub fn read_cell_columns(
+    //     &self,
+    //     columns: Vec<usize>,
+    //     cells: Vec<table_leaf::TableLeafCell>,
+    // ) -> Result<()> {
+    //     for cell in cells {
+    //         let row = columns
+    //             .iter()
+    //             .map(|i| cell.read_column(*i).unwrap())
+    //             .collect::<Vec<String>>()
+    //             .join("|");
+    //         println!("{row}");
+    //     }
+    //
+    //     Ok(())
+    // }
+
+    // pub fn indicies_of_columns(&self, columns: Vec<String>, table_name: String) -> Vec<usize> {
+    //     columns
+    //         .into_iter()
+    //         .map(|column| {
+    //             let schema = self.find_column(&table_name, &column).unwrap();
+    //             schema.column_position(&column).unwrap()
+    //         })
+    //         .collect()
+    // }
+
+    // pub fn column_index(&self, column: &str, table_name: &str) -> usize {
+    //     let schema = self.find_column(table_name, column).unwrap();
+    //     schema.column_position(column).unwrap()
+    // }
 
     pub fn table_names(&self) -> Result<Vec<String>> {
-        let table_names: Result<Vec<String>, _> = self
+        let table_names: Vec<String> = self
             .cells()?
             .iter()
             .rev()
             .map(|cell| {
-                let schema_definition = cell.sqlite_schema()?;
-                String::from_utf8(schema_definition.table_name).map_err(anyhow::Error::from)
+                let schema_definition = cell.sqlite_schema().unwrap();
+                schema_definition.table_name
             })
             .collect();
 
-        table_names
+        Ok(table_names)
     }
 
-    pub fn find_table_page(&self, table: &str) -> Result<Vec<u8>> {
+    pub fn find_table_page(&self, table: &str) -> Result<usize> {
         self.cells()?
             .iter()
             .find(|cell| {
                 cell.sqlite_schema()
-                    .is_ok_and(|schema| schema.table_name == table.as_bytes())
+                    .is_ok_and(|schema| schema.table_name == table)
             })
             // .map(|cell| cell.row_id as usize)
             .map(|cell| cell.sqlite_schema().unwrap().root_page)
             .ok_or_else(|| anyhow!("Table `{}` not found", table))
     }
 
-    pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
-        for cell in self.cells()? {
-            let schema = cell.sqlite_schema()?;
-            if schema.sql_contains_str(column) && schema.table_name == table.as_bytes() {
-                return Ok(schema);
-            }
-        }
-
-        bail!("Column not found")
-    }
+    // pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
+    //     for cell in self.cells()? {
+    //         let schema = cell.sqlite_schema()?;
+    //         if schema.sql_contains_str(column) && schema.table_name == table {
+    //             return Ok(schema);
+    //         }
+    //     }
+    //
+    //     bail!("Column not found")
+    // }
 
     fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Result<Vec<u16>> {
         let mut cell_buf = [0; 2];
@@ -247,4 +264,39 @@ pub fn display_string_vector(vector: Vec<String>) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn traverse_b_tree(file: &mut File, page_size: u16, page_number: usize) {
+    let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
+
+    match page.page_header.page_type {
+        PageType::TableInterior => {
+            for child in page.cells_int().unwrap() {
+                let page =
+                    BTreePage::build_page(file, page_size as usize, child.left_child as usize)
+                        .unwrap();
+
+                for cell in page.cells().unwrap() {
+                    // println!(
+                    //     "{:?}",
+                    //     String::from_utf8(cell.sqlite_schema().unwrap().table_name)
+                    // );
+
+                    println!("{:?}", cell.build_schema_vec().unwrap());
+                    // cell.read_column(0 as usize);
+                }
+            }
+            // println!("{:?}", page.cells_int().unwrap())
+            // for cell in page.cells() {
+            //
+            // }
+        }
+
+        PageType::TableLeaf => {
+            for cell in page.cells() {
+                println!("Other")
+            }
+        }
+        _ => todo!(),
+    }
 }

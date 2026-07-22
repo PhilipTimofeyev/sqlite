@@ -5,12 +5,12 @@ use std::io::Read;
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct PageHeader {
-    page_type: PageType,
+    pub page_type: PageType,
     first_free_block: u16,
     pub cell_count: u16,
     pub cell_content_area_start: u16,
     fragment_free_bytes: u8,
-    page_number: Option<u32>, // Only for interior b-tree page
+    pub page_number: Option<u32>, // Only for interior b-tree page
 }
 
 impl PageHeader {
@@ -78,7 +78,7 @@ impl TryFrom<&[u8]> for PageHeader {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-enum PageType {
+pub enum PageType {
     TableLeaf,
     TableInterior,
     IndexLeaf,
