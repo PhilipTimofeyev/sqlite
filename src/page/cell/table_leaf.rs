@@ -89,7 +89,7 @@ pub struct Schema {
     schema_type: Vec<u8>,
     pub name: Vec<u8>,
     pub table_name: Vec<u8>,
-    root_page: Vec<u8>,
+    pub root_page: Vec<u8>,
     pub sql: Vec<u8>,
 }
 

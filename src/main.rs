@@ -3,7 +3,6 @@ use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::btree::BTreePage;
 use codecrafters_sqlite::page::{self};
 use std::fs::File;
-use std::io::{Seek, SeekFrom};
 
 fn main() -> Result<()> {
     let args = std::env::args().collect::<Vec<_>>();
@@ -39,15 +38,18 @@ fn main() -> Result<()> {
 
             let mut split_command = command::split_command(cmd);
             let table_name = split_command.remove(split_command.len() - 1);
-            let page_number = root_page.find_table_page(&table_name)?;
+            let mut page_number = root_page.find_table_page(&table_name)?;
+            let page_number = page_number.remove(0) as usize;
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
-
-            println!("page index {:?}", page_number);
-            println!("page size {:?}", page_size);
-
+            //
+            // println!("page index {:?}", page_number);
+            println!("page_number {:?}", page_number);
+            // println!("page size {:?}", page_size);
+            ////
             let page =
                 page::btree::BTreePage::build_page(&mut file, page_size as usize, page_number)?;
-            println!("{:?}", page.cell_pointer_array.len());
+            // println!("{:?}", page.cell_pointer_array.len());
+            println!("{:?}", page);
 
             // let page = pages.remove(page_index - 1);
             //
@@ -76,27 +78,27 @@ fn main() -> Result<()> {
         //     page.read_cell_columns(column_indexes, cells)?;
         // }
         //
-        // cmd if cmd.to_lowercase().contains("select") => {
-        //     // Example command: "SELECT name, color FROM oranges"
-        //     // Everything between SELECT and FROM are the columns, retaining order
-        //     // Last word is table name
-        //
-        //     let split_command = command::split_command(cmd);
-        //     let table_name = command::parse_command_table_name(&split_command)?;
-        //     let columns = command::parse_command_columns(&split_command);
-        //
-        //     // Search root page cells for specific table, returning row id of table
-        //     let page_index = root_page.find_table_page(&table_name)?;
-        //
-        //     println!("page index {:?}", page_index);
-        //
-        //     let page = &pages[page_index - 1];
-        //
-        //     // Get column index of each specified column
-        //     let column_indexes = root_page.indicies_of_columns(columns, table_name);
-        //     let cells = page.cells()?;
-        //     page.read_cell_columns(column_indexes, cells)?;
-        // }
+        cmd if cmd.to_lowercase().contains("select") => {
+            // Example command: "SELECT name, color FROM oranges"
+            // Everything between SELECT and FROM are the columns, retaining order
+            // Last word is table name
+
+            let split_command = command::split_command(cmd);
+            let table_name = command::parse_command_table_name(&split_command)?;
+            let columns = command::parse_command_columns(&split_command);
+
+            // Search root page cells for specific table, returning row id of table
+            let page_index = root_page.find_table_page(&table_name)?;
+
+            println!("page index {:?}", page_index);
+            //
+            // let page = &pages[page_index - 1];
+            //
+            // // Get column index of each specified column
+            // let column_indexes = root_page.indicies_of_columns(columns, table_name);
+            // let cells = page.cells()?;
+            // page.read_cell_columns(column_indexes, cells)?;
+        }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 

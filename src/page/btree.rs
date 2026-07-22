@@ -50,8 +50,9 @@ impl BTreePage {
         Ok(root_page)
     }
 
+    // REFACTOR WITH ROOT PAGE
     pub fn build_page(file: &mut File, page_size: usize, page_num: usize) -> Result<BTreePage> {
-        let page_offset = page_num as u64 * page_size as u64;
+        let page_offset = (page_num as u64 - 1) * page_size as u64;
 
         file.seek(SeekFrom::Start(page_offset))?;
 
@@ -204,14 +205,15 @@ impl BTreePage {
         table_names
     }
 
-    pub fn find_table_page(&self, table: &str) -> Result<usize> {
+    pub fn find_table_page(&self, table: &str) -> Result<Vec<u8>> {
         self.cells()?
             .iter()
             .find(|cell| {
                 cell.sqlite_schema()
                     .is_ok_and(|schema| schema.table_name == table.as_bytes())
             })
-            .map(|cell| cell.row_id as usize)
+            // .map(|cell| cell.row_id as usize)
+            .map(|cell| cell.sqlite_schema().unwrap().root_page)
             .ok_or_else(|| anyhow!("Table `{}` not found", table))
     }
 
