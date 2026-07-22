@@ -3,7 +3,7 @@ use super::header::PageHeader;
 use crate::page::cell::table_leaf::{self, parse_varint, TableLeafCell};
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
-use std::io::{Cursor, Read, Seek};
+use std::io::{Cursor, Read, Seek, SeekFrom};
 
 #[derive(Debug)]
 pub struct BTreePage {
@@ -48,6 +48,18 @@ impl BTreePage {
 
         let root_page = BTreePage::new(root_page, Some(database_header))?;
         Ok(root_page)
+    }
+
+    pub fn build_page(file: &mut File, page_size: usize, page_num: usize) -> Result<BTreePage> {
+        let page_offset = page_num as u64 * page_size as u64;
+
+        file.seek(SeekFrom::Start(page_offset))?;
+
+        let mut page = vec![0; page_size];
+        file.read_exact(&mut page)?;
+
+        let page = BTreePage::new(page, None)?;
+        Ok(page)
     }
 
     pub fn build_pages(file: &mut File) -> Result<Vec<BTreePage>> {
