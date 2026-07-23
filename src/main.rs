@@ -91,14 +91,22 @@ fn main() -> Result<()> {
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
 
+            let mut columns = Vec::new();
             for row in rows {
+                let mut row_cols = Vec::new();
                 for column_index in column_indexes.as_slice() {
                     match &row.values[*column_index] {
-                        SerialValue::Text(value) => println!("{value}"),
+                        SerialValue::Text(value) => row_cols.push(value.clone()),
                         SerialValue::Null => println!("Null"),
                         _ => todo!(),
                     };
                 }
+                columns.push(row_cols);
+            }
+
+            for row in columns {
+                let columns = row.join("|");
+                println!("{columns}");
             }
         }
         _ => bail!("Missing or invalid command passed: {}", command),

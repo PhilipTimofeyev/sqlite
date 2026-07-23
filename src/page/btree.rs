@@ -171,7 +171,6 @@ impl BTreePage {
         let table_names: Vec<String> = self
             .cells()?
             .iter()
-            .rev()
             .map(|cell| {
                 let schema_definition = cell.sqlite_schema().unwrap();
                 schema_definition.table_name
