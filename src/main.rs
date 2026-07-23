@@ -41,10 +41,10 @@ fn main() -> Result<()> {
             let page_number = root_page.find_table_page(&table_name)?;
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
 
-            let page =
-                page::btree::BTreePage::build_page(&mut file, page_size as usize, page_number)?;
+            let mut rows = Vec::new();
+            page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
 
-            println!("{}", page.cell_pointer_array.len())
+            println!("{}", rows.len())
         }
         // cmd if cmd.to_lowercase().contains("where") => {
         //     // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
@@ -86,7 +86,6 @@ fn main() -> Result<()> {
             let column_indexes = Some(root_page.indicies_of_columns(columns, table_name));
 
             let mut rows = Vec::new();
-
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
         }
         _ => bail!("Missing or invalid command passed: {}", command),
