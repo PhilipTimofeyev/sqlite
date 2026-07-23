@@ -49,11 +49,18 @@ pub fn parse_command_where(command: &[String]) -> Result<(String, String), anyho
         .first()
         .ok_or_else(|| anyhow::anyhow!("Column not found"))?
         .to_string();
-    let column_value = where_cmd
-        .last()
-        .ok_or_else(|| anyhow::anyhow!("Column value not found"))?;
 
-    let column_value = column_value.replace("'", "");
+    // .ok_or_else(|| anyhow::anyhow!("Column value not found"))?;
+    //
+    let equals_idx = command
+        .iter()
+        .position(|word| word.to_lowercase() == "=")
+        .unwrap();
+
+    let column_value = &command[equals_idx + 1..];
+
+    let column_value = column_value.join(" ").replace("'", "");
+    // println!("{column_value}");
 
     Ok((column, column_value))
 }

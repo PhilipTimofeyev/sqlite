@@ -162,10 +162,10 @@ impl BTreePage {
             .collect()
     }
 
-    // pub fn column_index(&self, column: &str, table_name: &str) -> usize {
-    //     let schema = self.find_column(table_name, column).unwrap();
-    //     schema.column_position(column).unwrap()
-    // }
+    pub fn column_index(&self, column: &str, table_name: &str) -> usize {
+        let schema = self.find_column(table_name, column).unwrap();
+        schema.column_position(column).unwrap()
+    }
 
     pub fn table_names(&self) -> Result<Vec<String>> {
         let table_names: Vec<String> = self
