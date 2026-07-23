@@ -272,29 +272,13 @@ pub fn traverse_b_tree(file: &mut File, page_size: u16, page_number: usize) {
     match page.page_header.page_type {
         PageType::TableInterior => {
             for child in page.cells_int().unwrap() {
-                let page =
-                    BTreePage::build_page(file, page_size as usize, child.left_child as usize)
-                        .unwrap();
-
-                for cell in page.cells().unwrap() {
-                    // println!(
-                    //     "{:?}",
-                    //     String::from_utf8(cell.sqlite_schema().unwrap().table_name)
-                    // );
-
-                    println!("{:?}", cell.build_schema_vec().unwrap());
-                    // cell.read_column(0 as usize);
-                }
+                traverse_b_tree(file, page_size, child.left_child as usize);
             }
-            // println!("{:?}", page.cells_int().unwrap())
-            // for cell in page.cells() {
-            //
-            // }
         }
 
         PageType::TableLeaf => {
-            for cell in page.cells() {
-                println!("Other")
+            for cell in page.cells().unwrap() {
+                println!("row id: {}, {:?}", cell.row_id, cell.build_schema_vec());
             }
         }
         _ => todo!(),
