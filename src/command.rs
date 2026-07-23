@@ -14,7 +14,11 @@ pub fn parse_command_columns(command: &[String]) -> Vec<String> {
 
     columns
         .iter()
-        .map(|column| keep_ascii_alphabet_chars(column.to_string()))
+        .map(|column| {
+            let mut column = column.to_string();
+            column.retain(|c| c != ',');
+            column.to_string()
+        })
         .collect()
 }
 
