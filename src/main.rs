@@ -3,8 +3,7 @@ use crate::page::cell::table_leaf::{
 };
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
-use codecrafters_sqlite::page::btree::BTreePage;
-use codecrafters_sqlite::page::{self};
+use codecrafters_sqlite::page::{self, btree};
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -66,12 +65,12 @@ fn main() -> Result<()> {
 
             // Get column index of each specified column
             let column_index = root_page.column_index(&where_column, &table_name);
-            let column_indexes = root_page.indicies_of_columns(columns, table_name);
+            let column_indices = root_page.indicies_of_columns(columns, table_name);
 
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
 
-            let mut row_ids = Vec::new();
+            let mut filtered_rows = Vec::new();
             for row in rows {
                 let col_value = match &row.values[column_index] {
                     SerialValue::Text(value) => value.to_string(),
@@ -80,30 +79,12 @@ fn main() -> Result<()> {
                 };
 
                 if col_value == where_column_value {
-                    row_ids.push(row)
+                    filtered_rows.push(row)
                 };
             }
 
-            let mut columns = Vec::new();
-            for row in row_ids {
-                let mut row_cols = Vec::new();
-                if column_indexes.contains(&0) {
-                    row_cols.push(row.row_id.to_string())
-                }
-                for column_index in column_indexes.as_slice() {
-                    match &row.values[*column_index] {
-                        SerialValue::Text(value) => row_cols.push(value.clone()),
-                        SerialValue::Null => (),
-                        _ => todo!(),
-                    };
-                }
-                columns.push(row_cols);
-            }
-
-            for row in columns {
-                let columns = row.join("|");
-                println!("{columns}");
-            }
+            let columns = read_columns(filtered_rows, column_indices);
+            display_columns(columns);
         }
 
         cmd if cmd.to_lowercase().contains("select") => {
@@ -120,31 +101,44 @@ fn main() -> Result<()> {
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
 
             // // Get column index of each specified column
-            let column_indexes = root_page.indicies_of_columns(columns, table_name);
+            let column_indices = root_page.indicies_of_columns(columns, table_name);
 
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
 
-            let mut columns = Vec::new();
-            for row in rows {
-                let mut row_cols = Vec::new();
-                for column_index in column_indexes.as_slice() {
-                    match &row.values[*column_index] {
-                        SerialValue::Text(value) => row_cols.push(value.clone()),
-                        SerialValue::Null => println!("Null"),
-                        _ => todo!(),
-                    };
-                }
-                columns.push(row_cols);
-            }
+            let columns = read_columns(rows, column_indices);
 
-            for row in columns {
-                let columns = row.join("|");
-                println!("{columns}");
-            }
+            display_columns(columns);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 
     Ok(())
+}
+
+fn read_columns(rows: Vec<btree::Row>, column_indices: Vec<usize>) -> Vec<Vec<String>> {
+    let mut column_values = Vec::new();
+    for row in rows {
+        let mut row_cols = Vec::new();
+        if column_indices.contains(&0) {
+            row_cols.push(row.row_id.to_string())
+        }
+        for column_index in column_indices.as_slice() {
+            match &row.values[*column_index] {
+                SerialValue::Text(value) => row_cols.push(value.clone()),
+                SerialValue::Null => (),
+                _ => todo!(),
+            };
+        }
+        column_values.push(row_cols);
+    }
+
+    column_values
+}
+
+fn display_columns(columns: Vec<Vec<String>>) {
+    for row in columns {
+        let columns = row.join("|");
+        println!("{columns}");
+    }
 }
