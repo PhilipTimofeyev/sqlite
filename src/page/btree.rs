@@ -259,5 +259,5 @@ pub fn traverse_b_tree(
 #[derive(Debug)]
 pub struct Row {
     pub row_id: u64,
-    values: Vec<SerialValue>,
+    pub values: Vec<SerialValue>,
 }

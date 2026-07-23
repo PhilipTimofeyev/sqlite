@@ -1,3 +1,6 @@
+use crate::page::cell::table_leaf::{
+    self, parse_varint, SerialValue, TableInteriorCell, TableLeafCell,
+};
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::btree::BTreePage;
@@ -83,10 +86,20 @@ fn main() -> Result<()> {
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
 
             // // Get column index of each specified column
-            let column_indexes = Some(root_page.indicies_of_columns(columns, table_name));
+            let column_indexes = root_page.indicies_of_columns(columns, table_name);
 
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
+
+            for row in rows {
+                for column_index in column_indexes.as_slice() {
+                    match &row.values[*column_index] {
+                        SerialValue::Text(value) => println!("{value}"),
+                        SerialValue::Null => println!("Null"),
+                        _ => todo!(),
+                    };
+                }
+            }
         }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
