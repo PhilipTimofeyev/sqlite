@@ -1,7 +1,7 @@
 use super::super::header::DatabaseHeader;
 use super::header::{PageHeader, PageType};
 use crate::page::cell::table_leaf::{
-    self, parse_varint, SerialValue, TableInteriorCell, TableLeafCell,
+    self, SerialValue, TableCell, TableInteriorCell, TableLeafCell,
 };
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
@@ -65,34 +65,7 @@ impl BTreePage {
         Ok(page)
     }
 
-    pub fn build_pages(file: &mut File) -> Result<Vec<BTreePage>> {
-        // Build root page
-        let mut header = [0; 100];
-
-        file.read_exact(&mut header)?;
-        let database_header = DatabaseHeader::try_from(&header[..])?;
-
-        let page_size = u16::from_be_bytes(database_header.page_size) as usize;
-        let mut root_page = vec![0; page_size - 100];
-        file.read_exact(&mut root_page)?;
-
-        let root_page = BTreePage::new(root_page, Some(database_header))?;
-
-        // Build rest of pages
-        let mut pages = vec![root_page];
-
-        loop {
-            let mut buf = vec![0; page_size];
-            if file.read_exact(&mut buf).is_err() {
-                return Ok(pages);
-            };
-            // println!("{buf:?}");
-            let b_tree = BTreePage::new(buf, None)?;
-            pages.push(b_tree);
-        }
-    }
-
-    pub fn cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
+    pub fn cells(&self) -> Result<Vec<table_leaf::TableCell>> {
         let cell_pointers = &self.cell_pointer_array;
 
         let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
@@ -102,101 +75,96 @@ impl BTreePage {
             } else {
                 *pointer as usize
             };
-            let cell = TableLeafCell::try_from(&self.data[offset..])?;
-            cells.push(cell);
-        }
+            let cell = match self.page_header.page_type {
+                PageType::TableLeaf => {
+                    TableCell::Leaf(TableLeafCell::try_from(&self.data[offset..])?)
+                }
 
-        Ok(cells)
-    }
+                PageType::TableInterior => {
+                    TableCell::Interior(TableInteriorCell::try_from(&self.data[offset..])?)
+                }
 
-    pub fn cells_int(&self) -> Result<Vec<table_leaf::TableInteriorCell>> {
-        let cell_pointers = &self.cell_pointer_array;
-
-        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
-        for pointer in cell_pointers {
-            let offset = if self.file_header.is_some() {
-                (pointer - 100) as usize
-            } else {
-                *pointer as usize
+                _ => {
+                    return Err(anyhow!("Unsupported page type"));
+                }
             };
-            let cell = TableInteriorCell::try_from(&self.data[offset..])?;
             cells.push(cell);
         }
 
         Ok(cells)
     }
 
-    // pub fn find_cells(&self, column: &usize, value: &str) -> Vec<table_leaf::TableLeafCell> {
-    //     self.cells()
-    //         .unwrap()
-    //         .iter()
-    //         .filter(|cell| cell.search_value(*column, value))
-    //         .cloned()
-    //         .collect()
-    // }
-
-    pub fn read_cell_columns(
+    pub fn indicies_of_columns(
         &self,
-        columns: &[usize],
-        cells: Vec<table_leaf::TableLeafCell>,
-    ) -> Result<()> {
-        for cell in cells {
-            let row = columns
-                .iter()
-                .map(|i| cell.read_column(*i).unwrap())
-                .collect::<Vec<String>>()
-                .join("|");
-            println!("{row}");
-        }
-
-        Ok(())
-    }
-
-    pub fn indicies_of_columns(&self, columns: Vec<String>, table_name: String) -> Vec<usize> {
+        columns: Vec<String>,
+        table_name: String,
+    ) -> Result<Vec<usize>> {
         columns
             .into_iter()
             .map(|column| {
-                let schema = self.find_column(&table_name, &column).unwrap();
-                schema.column_position(&column).unwrap()
+                let schema = self.find_column(&table_name, &column)?;
+                let position = schema.column_position(&column)?;
+                Ok(position)
             })
             .collect()
     }
 
-    pub fn column_index(&self, column: &str, table_name: &str) -> usize {
-        let schema = self.find_column(table_name, column).unwrap();
-        schema.column_position(column).unwrap()
+    pub fn column_index(&self, column: &str, table_name: &str) -> Result<usize> {
+        let schema = self.find_column(table_name, column)?;
+        let position = schema.column_position(column)?;
+
+        Ok(position)
     }
 
     pub fn table_names(&self) -> Result<Vec<String>> {
-        let table_names: Vec<String> = self
-            .cells()?
-            .iter()
-            .map(|cell| {
-                let schema_definition = cell.sqlite_schema().unwrap();
-                schema_definition.table_name
-            })
-            .collect();
+        let mut table_names = Vec::new();
+
+        for cell in self.cells()? {
+            match cell {
+                TableCell::Leaf(leaf_cell) => {
+                    let schema = leaf_cell.sqlite_schema()?;
+                    table_names.push(schema.table_name);
+                }
+
+                TableCell::Interior(_) => {}
+            }
+        }
 
         Ok(table_names)
     }
 
     pub fn find_table_page(&self, table: &str) -> Result<usize> {
-        self.cells()?
-            .iter()
-            .find(|cell| {
-                cell.sqlite_schema()
-                    .is_ok_and(|schema| schema.table_name == table)
+        let cells = self.cells()?;
+
+        cells
+            .into_iter()
+            .find(|cell| match cell {
+                TableCell::Leaf(leaf_cell) => leaf_cell
+                    .sqlite_schema()
+                    .is_ok_and(|schema| schema.table_name == table),
+
+                TableCell::Interior(_) => false,
             })
-            // .map(|cell| cell.row_id as usize)
-            .map(|cell| cell.sqlite_schema().unwrap().root_page)
+            .map(|cell| match cell {
+                TableCell::Leaf(leaf_cell) => leaf_cell.sqlite_schema().unwrap().root_page,
+
+                TableCell::Interior(_) => {
+                    todo!()
+                }
+            })
             .ok_or_else(|| anyhow!("Table `{}` not found", table))
     }
 
     pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
         for cell in self.cells()? {
-            let schema = cell.sqlite_schema()?;
-            if schema.sql_contains_str(column) && schema.table_name == table {
-                return Ok(schema);
+            match cell {
+                TableCell::Leaf(leaf_cell) => {
+                    let schema = leaf_cell.sqlite_schema()?;
+                    if schema.sql_contains_str(column) && schema.table_name == table {
+                        return Ok(schema);
+                    }
+                }
+                TableCell::Interior(_) => {}
             }
         }
 
@@ -234,19 +202,29 @@ pub fn traverse_b_tree(
 
     match page.page_header.page_type {
         PageType::TableInterior => {
-            for child in page.cells_int().unwrap() {
-                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+            for child in page.cells().unwrap() {
+                match child {
+                    TableCell::Leaf(_) => {}
+                    TableCell::Interior(interior_cell) => {
+                        traverse_b_tree(file, page_size, interior_cell.left_child as usize, rows)?;
+                    }
+                }
             }
         }
 
         PageType::TableLeaf => {
             for cell in page.cells().unwrap() {
-                let values = cell.build_serial_types().unwrap();
-                let row = Row {
-                    row_id: cell.row_id,
-                    values,
-                };
-                rows.push(row);
+                match cell {
+                    TableCell::Leaf(leaf_cell) => {
+                        let values = leaf_cell.build_serial_types().unwrap();
+                        let row = Row {
+                            row_id: leaf_cell.row_id,
+                            values,
+                        };
+                        rows.push(row);
+                    }
+                    TableCell::Interior(_) => {}
+                }
             }
         }
         _ => todo!(),

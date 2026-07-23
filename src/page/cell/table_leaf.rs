@@ -17,11 +17,16 @@ pub struct TableInteriorCell {
     pub row_id: u64, // Primary Key
 }
 
+pub enum TableCell {
+    Interior(TableInteriorCell),
+    Leaf(TableLeafCell),
+}
+
 impl TryFrom<&[u8]> for TableInteriorCell {
     type Error = anyhow::Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self> {
-        let left_child: u32 = u32::from_be_bytes(bytes[0..4].try_into().unwrap());
+        let left_child: u32 = u32::from_be_bytes(bytes[0..4].try_into()?);
         let (row_id, _data) = parse_varint(&bytes[4..]).unwrap();
 
         Ok(TableInteriorCell { left_child, row_id })
@@ -62,7 +67,6 @@ impl SerialType {
 }
 
 pub fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
-    // println!("{:?}", data);
     for i in 0..9 {
         let Some(b) = data.get(i) else {
             panic!("Not enough bytes for varint");
@@ -125,8 +129,6 @@ pub struct Schema {
 impl Schema {
     pub fn sql_contains_str(&self, text: &str) -> bool {
         self.sql.contains(text)
-        // let text = text.as_bytes();
-        // self.sql.windows(text.len()).any(|window| window == text)
     }
 
     pub fn column_position(&self, column_name: &str) -> Result<usize> {
@@ -164,28 +166,18 @@ impl TableLeafCell {
             SerialValue::Null => Ok("Null".to_string()),
             _ => todo!(),
         }
-
-        // Ok(())
-        // Ok(column)
     }
-
-    // pub fn search_value(&self, column: usize, value: &str) -> bool {
-    //     self.read_column(column).unwrap() == value
-    // }
 
     pub fn build_serial_types(&self) -> Result<Vec<SerialValue>> {
         let mut serial_types = Vec::new();
 
         let (header_size, bytes) = parse_varint(&self.payload).unwrap();
         let varints = parse_header_varints(&bytes[0..header_size as usize - 1]);
-        // println!("varints {:?}", varints);
 
         for code in varints {
             let serial_type = SerialType::from_code(code);
             serial_types.push(serial_type);
         }
-
-        // println!("serial types {:?}", serial_types);
 
         let mut cursor = Cursor::new(self.payload.clone());
         cursor.set_position(header_size);
@@ -216,10 +208,6 @@ impl TableLeafCell {
                 }
                 SerialType::Null => {
                     schema_vec.push(SerialValue::Null);
-                }
-                _ => {
-                    println!("Other");
-                    todo!()
                 }
             }
         }

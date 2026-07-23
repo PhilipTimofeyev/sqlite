@@ -1,6 +1,4 @@
-use crate::page::cell::table_leaf::{
-    self, parse_varint, SerialValue, TableInteriorCell, TableLeafCell,
-};
+use crate::page::cell::table_leaf::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::{self, btree};
@@ -16,7 +14,6 @@ fn main() -> Result<()> {
 
     let command = &args[2];
     let mut file = File::open(&args[1])?;
-    // let mut pages = page::btree::BTreePage::build_pages(&mut file)?;
     let root_page = page::btree::BTreePage::build_root_page(&mut file)?;
 
     match command.as_str() {
@@ -64,8 +61,8 @@ fn main() -> Result<()> {
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
 
             // Get column index of each specified column
-            let column_index = root_page.column_index(&where_column, &table_name);
-            let column_indices = root_page.indicies_of_columns(columns, table_name);
+            let column_index = root_page.column_index(&where_column, &table_name)?;
+            let column_indices = root_page.indicies_of_columns(columns, table_name)?;
 
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
@@ -101,13 +98,12 @@ fn main() -> Result<()> {
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
 
             // // Get column index of each specified column
-            let column_indices = root_page.indicies_of_columns(columns, table_name);
+            let column_indices = root_page.indicies_of_columns(columns, table_name)?;
 
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
 
             let columns = read_columns(rows, column_indices);
-
             display_columns(columns);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
