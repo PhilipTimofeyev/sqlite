@@ -1,6 +1,8 @@
 use super::super::header::DatabaseHeader;
 use super::header::{PageHeader, PageType};
-use crate::page::cell::table_leaf::{self, parse_varint, TableInteriorCell, TableLeafCell};
+use crate::page::cell::table_leaf::{
+    self, parse_varint, SerialValue, TableInteriorCell, TableLeafCell,
+};
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -227,23 +229,35 @@ pub fn traverse_b_tree(
     file: &mut File,
     page_size: u16,
     page_number: usize,
-    query: Option<&Vec<usize>>,
-) {
+    rows: &mut Vec<Row>,
+) -> Result<()> {
     let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
 
     match page.page_header.page_type {
         PageType::TableInterior => {
             for child in page.cells_int().unwrap() {
-                traverse_b_tree(file, page_size, child.left_child as usize, query);
+                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
             }
         }
 
         PageType::TableLeaf => {
-            page.read_cell_columns(query.unwrap(), page.cells().unwrap());
-            // for cell in page.cells().unwrap() {
-            //     println!("row id: {}, {:?}", cell.row_id, cell.build_serial_types());
-            // }
+            for cell in page.cells().unwrap() {
+                let values = cell.build_serial_types().unwrap();
+                let row = Row {
+                    row_id: cell.row_id,
+                    values,
+                };
+                rows.push(row);
+            }
         }
         _ => todo!(),
     }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct Row {
+    pub row_id: u64,
+    values: Vec<SerialValue>,
 }
