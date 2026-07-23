@@ -50,6 +50,9 @@ impl SerialType {
     fn from_code(code: u64) -> Self {
         match code {
             n @ 1..7 => SerialType::Integer(n as usize),
+            // Need to check 8 and 9
+            8 => SerialType::Null,
+            9 => SerialType::Null,
             n if n >= 12 && n % 2 == 0 => SerialType::Blob(((n - 12) / 2) as usize),
             n if n >= 13 && n % 2 == 1 => SerialType::Text(((n - 13) / 2) as usize),
             0 => SerialType::Null,
@@ -120,10 +123,11 @@ pub struct Schema {
 }
 
 impl Schema {
-    // pub fn sql_contains_str(&self, text: &str) -> bool {
-    //     let text = text.as_bytes();
-    //     self.sql.windows(text.len()).any(|window| window == text)
-    // }
+    pub fn sql_contains_str(&self, text: &str) -> bool {
+        self.sql.contains(text)
+        // let text = text.as_bytes();
+        // self.sql.windows(text.len()).any(|window| window == text)
+    }
 
     pub fn column_position(&self, column_name: &str) -> Result<usize> {
         let schema_sql = self.sql.clone();
@@ -151,18 +155,25 @@ enum SchemaType {
 }
 
 impl TableLeafCell {
-    // pub fn read_column(&self, column: usize) -> Result<String> {
-    //     let schema_vec = self.build_schema_vec()?;
-    //     let column = String::from_utf8(schema_vec.clone().to_vec()[column].clone())?;
-    //
-    //     Ok(column)
-    // }
+    pub fn read_column(&self, column: usize) -> Result<String> {
+        let mut serial_types_vec = self.build_serial_types()?;
+        let column = serial_types_vec.remove(column);
+        match column {
+            SerialValue::Text(value) => Ok(value),
+            // SerialValue::Integer()
+            SerialValue::Null => Ok("Null".to_string()),
+            _ => todo!(),
+        }
+
+        // Ok(())
+        // Ok(column)
+    }
 
     // pub fn search_value(&self, column: usize, value: &str) -> bool {
     //     self.read_column(column).unwrap() == value
     // }
 
-    pub fn build_schema_vec(&self) -> Result<Vec<SerialValue>> {
+    pub fn build_serial_types(&self) -> Result<Vec<SerialValue>> {
         let mut serial_types = Vec::new();
 
         let (header_size, bytes) = parse_varint(&self.payload).unwrap();
@@ -174,6 +185,8 @@ impl TableLeafCell {
             serial_types.push(serial_type);
         }
 
+        // println!("serial types {:?}", serial_types);
+
         let mut cursor = Cursor::new(self.payload.clone());
         cursor.set_position(header_size);
         let mut schema_vec = Vec::new();
@@ -183,7 +196,6 @@ impl TableLeafCell {
                 // NEEDS TO HANDLE 0 to 8 bytes
                 SerialType::Integer(bytes) => {
                     // NEED TO ACCEPT 1 THROUGH 8 Bytes
-                    println!("{:?}", bytes);
                     let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
                     let value = buf.remove(0) as u64;
@@ -199,7 +211,6 @@ impl TableLeafCell {
                 SerialType::Blob(bytes) => {
                     let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
-                    println!("HERE {:?}", buf);
                     // let value = String::from_utf8(buf.clone()).unwrap();
                     schema_vec.push(SerialValue::Blob(buf));
                 }
@@ -217,7 +228,7 @@ impl TableLeafCell {
     }
 
     pub fn sqlite_schema(&self) -> Result<Schema> {
-        let mut schema_vec = self.build_schema_vec()?;
+        let mut schema_vec = self.build_serial_types()?;
 
         let schema_type = match schema_vec.remove(0) {
             SerialValue::Text(value) => value,

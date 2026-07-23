@@ -18,7 +18,7 @@ impl BTreePage {
         let mut cursor = Cursor::new(bytes.clone());
         let page_header = PageHeader::new(&mut cursor)?;
         let cell_pointer_array = BTreePage::pointers(&mut cursor, &page_header)?;
-        let unallocated_space_size = if file_header.is_some() {
+        let _unallocated_space_size = if file_header.is_some() {
             page_header.cell_content_area_start as u64 - 100 - cursor.position()
         } else {
             page_header.cell_content_area_start as u64 - cursor.position()
@@ -90,49 +90,6 @@ impl BTreePage {
         }
     }
 
-    // DELETE
-    pub fn _old_cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
-        let mut file = Cursor::new(self.data.clone());
-        println!("pointer array {:?}", self.cell_pointer_array);
-        // println!("DATA {:?}", file);
-        let mut cell_pointers_peek = self.cell_pointer_array.iter().rev().peekable();
-        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
-
-        // file.set_position(cell_pointers_peek.peek().unwrap().to_owned().to_owned() as u64);
-        println!("HERE {:?}", self.page_header);
-        while let Some(pointer) = cell_pointers_peek.next() {
-            // Offset when root B Tree Page
-            if self.file_header.is_some() {
-                file.set_position(*pointer as u64 - 100);
-            } else {
-                file.set_position(*pointer as u64);
-            }
-
-            if let Some(next_pointer) = cell_pointers_peek.peek() {
-                let num_bytes_to_read = *next_pointer - pointer;
-                println!("next_pointer {}", next_pointer);
-                println!("pointer {}", pointer);
-                println!("bytes to read {}", num_bytes_to_read);
-                let mut buf = vec![0; num_bytes_to_read as usize];
-                // println!("First buf{:?}", buf);
-                file.read_exact(&mut buf)?;
-                let table_leaf_cell = table_leaf::TableLeafCell::try_from(&buf[..])?;
-                // println!("{:?}", table_leaf_cell);
-                cells.push(table_leaf_cell)
-            } else {
-                let mut buf = Vec::new();
-                file.read_to_end(&mut buf)?;
-                // println!("\n{:?}", buf);
-                let table_leaf_cell = table_leaf::TableLeafCell::try_from(&buf[..])?;
-                cells.push(table_leaf_cell);
-            }
-        }
-
-        // println!("{:?}", cells);
-
-        Ok(cells)
-    }
-
     pub fn cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
         let cell_pointers = &self.cell_pointer_array;
 
@@ -176,32 +133,32 @@ impl BTreePage {
     //         .collect()
     // }
 
-    // pub fn read_cell_columns(
-    //     &self,
-    //     columns: Vec<usize>,
-    //     cells: Vec<table_leaf::TableLeafCell>,
-    // ) -> Result<()> {
-    //     for cell in cells {
-    //         let row = columns
-    //             .iter()
-    //             .map(|i| cell.read_column(*i).unwrap())
-    //             .collect::<Vec<String>>()
-    //             .join("|");
-    //         println!("{row}");
-    //     }
-    //
-    //     Ok(())
-    // }
+    pub fn read_cell_columns(
+        &self,
+        columns: &[usize],
+        cells: Vec<table_leaf::TableLeafCell>,
+    ) -> Result<()> {
+        for cell in cells {
+            let row = columns
+                .iter()
+                .map(|i| cell.read_column(*i).unwrap())
+                .collect::<Vec<String>>()
+                .join("|");
+            println!("{row}");
+        }
 
-    // pub fn indicies_of_columns(&self, columns: Vec<String>, table_name: String) -> Vec<usize> {
-    //     columns
-    //         .into_iter()
-    //         .map(|column| {
-    //             let schema = self.find_column(&table_name, &column).unwrap();
-    //             schema.column_position(&column).unwrap()
-    //         })
-    //         .collect()
-    // }
+        Ok(())
+    }
+
+    pub fn indicies_of_columns(&self, columns: Vec<String>, table_name: String) -> Vec<usize> {
+        columns
+            .into_iter()
+            .map(|column| {
+                let schema = self.find_column(&table_name, &column).unwrap();
+                schema.column_position(&column).unwrap()
+            })
+            .collect()
+    }
 
     // pub fn column_index(&self, column: &str, table_name: &str) -> usize {
     //     let schema = self.find_column(table_name, column).unwrap();
@@ -234,16 +191,16 @@ impl BTreePage {
             .ok_or_else(|| anyhow!("Table `{}` not found", table))
     }
 
-    // pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
-    //     for cell in self.cells()? {
-    //         let schema = cell.sqlite_schema()?;
-    //         if schema.sql_contains_str(column) && schema.table_name == table {
-    //             return Ok(schema);
-    //         }
-    //     }
-    //
-    //     bail!("Column not found")
-    // }
+    pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
+        for cell in self.cells()? {
+            let schema = cell.sqlite_schema()?;
+            if schema.sql_contains_str(column) && schema.table_name == table {
+                return Ok(schema);
+            }
+        }
+
+        bail!("Column not found")
+    }
 
     fn pointers(file: &mut Cursor<Vec<u8>>, page_header: &PageHeader) -> Result<Vec<u16>> {
         let mut cell_buf = [0; 2];
@@ -266,20 +223,26 @@ pub fn display_string_vector(vector: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-pub fn traverse_b_tree(file: &mut File, page_size: u16, page_number: usize) {
+pub fn traverse_b_tree(
+    file: &mut File,
+    page_size: u16,
+    page_number: usize,
+    query: Option<&Vec<usize>>,
+) {
     let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
 
     match page.page_header.page_type {
         PageType::TableInterior => {
             for child in page.cells_int().unwrap() {
-                traverse_b_tree(file, page_size, child.left_child as usize);
+                traverse_b_tree(file, page_size, child.left_child as usize, query);
             }
         }
 
         PageType::TableLeaf => {
-            for cell in page.cells().unwrap() {
-                println!("row id: {}, {:?}", cell.row_id, cell.build_schema_vec());
-            }
+            page.read_cell_columns(query.unwrap(), page.cells().unwrap());
+            // for cell in page.cells().unwrap() {
+            //     println!("row id: {}, {:?}", cell.row_id, cell.build_serial_types());
+            // }
         }
         _ => todo!(),
     }

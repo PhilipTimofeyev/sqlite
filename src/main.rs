@@ -82,15 +82,22 @@ fn main() -> Result<()> {
             let page_number = root_page.find_table_page(&table_name)? as usize;
             let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
 
-            println!("page index {:?}", page_number);
-
-            page::btree::traverse_b_tree(&mut file, page_size, page_number);
+            // println!("page index {:?}", page_number);
+            // println!("columns {:?}", columns);
 
             //
             // let page = &pages[page_index - 1];
             //
             // // Get column index of each specified column
-            // let column_indexes = root_page.indicies_of_columns(columns, table_name);
+            let column_indexes = Some(root_page.indicies_of_columns(columns, table_name));
+            // println!("colomn indexes {:?}", column_indexes);
+
+            page::btree::traverse_b_tree(
+                &mut file,
+                page_size,
+                page_number,
+                column_indexes.as_ref(),
+            );
             // let cells = page.cells()?;
             // page.read_cell_columns(column_indexes, cells)?;
         }

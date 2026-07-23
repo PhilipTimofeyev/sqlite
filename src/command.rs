@@ -22,12 +22,6 @@ pub fn parse_command_columns(command: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn keep_ascii_alphabet_chars(word: String) -> String {
-    word.chars()
-        .filter(|char| char.is_ascii_alphabetic())
-        .collect()
-}
-
 pub fn parse_command_table_name(command: &[String]) -> Result<String, anyhow::Error> {
     let from_idx = command
         .iter()
