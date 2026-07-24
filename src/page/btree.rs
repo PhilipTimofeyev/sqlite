@@ -1,7 +1,7 @@
 use super::super::header::DatabaseHeader;
 use super::header::{PageHeader, PageType};
 use crate::page::cell::table_leaf::{
-    self, SerialValue, TableCell, TableInteriorCell, TableLeafCell,
+    self, IndexInteriorCell, IndexLeafCell, SerialValue, TableInteriorCell, TableLeafCell,
 };
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
@@ -52,6 +52,20 @@ impl BTreePage {
         Ok(root_page)
     }
 
+    pub fn get_index_page(&self) -> Result<Option<u32>> {
+        let cells = self.table_leaf_cells()?;
+
+        let table_leaf_cell = cells.into_iter().find(|cell| cell.is_index_page().unwrap());
+
+        match table_leaf_cell {
+            Some(cell) => {
+                let root_page_num = cell.sqlite_schema().unwrap().root_page;
+                Ok(Some(root_page_num as u32))
+            }
+            None => Ok(None),
+        }
+    }
+
     // REFACTOR WITH ROOT PAGE
     pub fn build_page(file: &mut File, page_size: usize, page_num: usize) -> Result<BTreePage> {
         let page_offset = (page_num as u64 - 1) * page_size as u64;
@@ -65,7 +79,7 @@ impl BTreePage {
         Ok(page)
     }
 
-    pub fn cells(&self) -> Result<Vec<table_leaf::TableCell>> {
+    pub fn table_interior_cells(&self) -> Result<Vec<table_leaf::TableInteriorCell>> {
         let cell_pointers = &self.cell_pointer_array;
 
         let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
@@ -75,19 +89,58 @@ impl BTreePage {
             } else {
                 *pointer as usize
             };
-            let cell = match self.page_header.page_type {
-                PageType::TableLeaf => {
-                    TableCell::Leaf(TableLeafCell::try_from(&self.data[offset..])?)
-                }
+            let cell = TableInteriorCell::try_from(&self.data[offset..])?;
+            cells.push(cell);
+        }
 
-                PageType::TableInterior => {
-                    TableCell::Interior(TableInteriorCell::try_from(&self.data[offset..])?)
-                }
+        Ok(cells)
+    }
 
-                _ => {
-                    return Err(anyhow!("Unsupported page type"));
-                }
+    pub fn index_interior_cells(&self) -> Result<Vec<table_leaf::IndexInteriorCell>> {
+        let cell_pointers = &self.cell_pointer_array;
+
+        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
+        for pointer in cell_pointers {
+            let offset = if self.file_header.is_some() {
+                (pointer - 100) as usize
+            } else {
+                *pointer as usize
             };
+            let cell = IndexInteriorCell::try_from(&self.data[offset..])?;
+            cells.push(cell);
+        }
+
+        Ok(cells)
+    }
+
+    pub fn index_leaf_cells(&self) -> Result<Vec<table_leaf::IndexLeafCell>> {
+        let cell_pointers = &self.cell_pointer_array;
+
+        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
+        for pointer in cell_pointers {
+            let offset = if self.file_header.is_some() {
+                (pointer - 100) as usize
+            } else {
+                *pointer as usize
+            };
+            let cell = IndexLeafCell::try_from(&self.data[offset..])?;
+            cells.push(cell);
+        }
+
+        Ok(cells)
+    }
+
+    pub fn table_leaf_cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
+        let cell_pointers = &self.cell_pointer_array;
+
+        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
+        for pointer in cell_pointers {
+            let offset = if self.file_header.is_some() {
+                (pointer - 100) as usize
+            } else {
+                *pointer as usize
+            };
+            let cell = TableLeafCell::try_from(&self.data[offset..])?;
             cells.push(cell);
         }
 
@@ -119,52 +172,32 @@ impl BTreePage {
     pub fn table_names(&self) -> Result<Vec<String>> {
         let mut table_names = Vec::new();
 
-        for cell in self.cells()? {
-            match cell {
-                TableCell::Leaf(leaf_cell) => {
-                    let schema = leaf_cell.sqlite_schema()?;
-                    table_names.push(schema.table_name);
-                }
-
-                TableCell::Interior(_) => {}
-            }
+        for cell in self.table_leaf_cells()? {
+            let schema = cell.sqlite_schema()?;
+            table_names.push(schema.table_name);
         }
 
         Ok(table_names)
     }
 
     pub fn find_table_page(&self, table: &str) -> Result<usize> {
-        let cells = self.cells()?;
+        let cells = self.table_leaf_cells()?;
 
         cells
             .into_iter()
-            .find(|cell| match cell {
-                TableCell::Leaf(leaf_cell) => leaf_cell
-                    .sqlite_schema()
-                    .is_ok_and(|schema| schema.table_name == table),
-
-                TableCell::Interior(_) => false,
+            .find(|cell| {
+                cell.sqlite_schema()
+                    .is_ok_and(|schema| schema.table_name == table)
             })
-            .map(|cell| match cell {
-                TableCell::Leaf(leaf_cell) => leaf_cell.sqlite_schema().unwrap().root_page,
-
-                TableCell::Interior(_) => {
-                    todo!()
-                }
-            })
+            .map(|cell| cell.sqlite_schema().unwrap().root_page)
             .ok_or_else(|| anyhow!("Table `{}` not found", table))
     }
 
     pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
-        for cell in self.cells()? {
-            match cell {
-                TableCell::Leaf(leaf_cell) => {
-                    let schema = leaf_cell.sqlite_schema()?;
-                    if schema.sql_contains_str(column) && schema.table_name == table {
-                        return Ok(schema);
-                    }
-                }
-                TableCell::Interior(_) => {}
+        for cell in self.table_leaf_cells()? {
+            let schema = cell.sqlite_schema()?;
+            if schema.sql_contains_str(column) && schema.table_name == table {
+                return Ok(schema);
             }
         }
 
@@ -202,32 +235,36 @@ pub fn traverse_b_tree(
 
     match page.page_header.page_type {
         PageType::TableInterior => {
-            for child in page.cells().unwrap() {
-                match child {
-                    TableCell::Leaf(_) => {}
-                    TableCell::Interior(interior_cell) => {
-                        traverse_b_tree(file, page_size, interior_cell.left_child as usize, rows)?;
-                    }
-                }
+            for child in page.table_interior_cells().unwrap() {
+                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
             }
         }
 
         PageType::TableLeaf => {
-            for cell in page.cells().unwrap() {
-                match cell {
-                    TableCell::Leaf(leaf_cell) => {
-                        let values = leaf_cell.build_serial_types().unwrap();
-                        let row = Row {
-                            row_id: leaf_cell.row_id,
-                            values,
-                        };
-                        rows.push(row);
-                    }
-                    TableCell::Interior(_) => {}
-                }
+            for cell in page.table_leaf_cells().unwrap() {
+                let values = cell.build_serial_types().unwrap();
+                let row = Row {
+                    row_id: cell.row_id,
+                    values,
+                };
+                rows.push(row);
             }
         }
-        _ => todo!(),
+        PageType::IndexInterior => {
+            for child in page.index_interior_cells().unwrap() {
+                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+            }
+        }
+        PageType::IndexLeaf => {
+            for cell in page.index_leaf_cells().unwrap() {
+                let values = cell.build_serial_types().unwrap();
+                // let row = Row {
+                //     row_id: cell.row_id,
+                //     values,
+                // };
+                // rows.push(row);
+            }
+        }
     }
 
     Ok(())
