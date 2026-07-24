@@ -246,8 +246,7 @@ pub fn get_row_ids(
                     Some(key)
                 } else {
                     None
-                }
-                .unwrap();
+                };
 
                 let row_id = info.remove(0);
 
@@ -255,16 +254,19 @@ pub fn get_row_ids(
                     Some(row_id)
                 } else {
                     None
-                }
-                .unwrap();
+                };
 
-                if value < key.as_str() {
-                    get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
-                }
+                if let Some(key) = key {
+                    if value < key.as_str() {
+                        get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
+                    }
 
-                if value == key {
-                    rows.push(row_id);
-                    get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
+                    if let Some(row_id) = row_id {
+                        if value == key {
+                            rows.push(row_id);
+                            get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
+                        }
+                    }
                 }
             }
 
@@ -362,50 +364,50 @@ pub fn traverse_b_tree_table(
     Ok(())
 }
 
-// pub fn traverse_b_tree_table(
-//     file: &mut File,
-//     page_size: u16,
-//     page_number: usize,
-//     rows: &mut Vec<Row>,
-// ) -> Result<()> {
-//     let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
-//
-//     match page.page_header.page_type {
-//         PageType::TableInterior => {
-//             for child in page.table_interior_cells().unwrap() {
-//                 traverse_b_tree_table(file, page_size, child.left_child as usize, rows)?;
-//             }
-//         }
-//
-//         PageType::TableLeaf => {
-//             for cell in page.table_leaf_cells().unwrap() {
-//                 let values = cell.build_serial_types().unwrap();
-//                 let row = Row {
-//                     row_id: cell.row_id,
-//                     values,
-//                 };
-//                 rows.push(row);
-//             }
-//         }
-//         PageType::IndexInterior => {
-//             for child in page.index_interior_cells().unwrap() {
-//                 traverse_b_tree_table(file, page_size, child.left_child as usize, rows)?;
-//             }
-//         }
-//         PageType::IndexLeaf => {
-//             for cell in page.index_leaf_cells().unwrap() {
-//                 let values = cell.build_serial_types().unwrap();
-//                 // let row = Row {
-//                 //     row_id: cell.row_id,
-//                 //     values,
-//                 // };
-//                 // rows.push(row);
-//             }
-//         }
-//     }
-//
-//     Ok(())
-// }
+pub fn traverse_b_tree(
+    file: &mut File,
+    page_size: u16,
+    page_number: usize,
+    rows: &mut Vec<Row>,
+) -> Result<()> {
+    let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
+
+    match page.page_header.page_type {
+        PageType::TableInterior => {
+            for child in page.table_interior_cells().unwrap() {
+                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+            }
+        }
+
+        PageType::TableLeaf => {
+            for cell in page.table_leaf_cells().unwrap() {
+                let values = cell.build_serial_types().unwrap();
+                let row = Row {
+                    row_id: cell.row_id,
+                    values,
+                };
+                rows.push(row);
+            }
+        }
+        PageType::IndexInterior => {
+            for child in page.index_interior_cells().unwrap() {
+                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+            }
+        }
+        PageType::IndexLeaf => {
+            for cell in page.index_leaf_cells().unwrap() {
+                let values = cell.build_serial_types().unwrap();
+                // let row = Row {
+                //     row_id: cell.row_id,
+                //     values,
+                // };
+                // rows.push(row);
+            }
+        }
+    }
+
+    Ok(())
+}
 
 #[derive(Debug)]
 pub struct Row {
