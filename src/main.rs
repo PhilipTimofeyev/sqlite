@@ -90,16 +90,17 @@ fn main() -> Result<()> {
                         where_column_value.as_ref(),
                     )?;
 
-                    println!("{:?}", row_ids);
-
                     let mut rows = Vec::new();
-                    page::btree::traverse_b_tree_table(
-                        &mut file,
-                        page_size,
-                        page_number,
-                        &mut rows,
-                        row_ids.remove(0),
-                    )?;
+
+                    for row_id in row_ids {
+                        page::btree::traverse_b_tree_table(
+                            &mut file,
+                            page_size,
+                            page_number,
+                            &mut rows,
+                            row_id,
+                        )?;
+                    }
 
                     let columns = read_columns(rows, column_indices);
                     display_columns(columns);

@@ -236,8 +236,10 @@ pub fn get_row_ids(
 
     match page.page_header.page_type {
         PageType::IndexInterior => {
-            for child in page.index_interior_cells().unwrap() {
-                let mut info = child.build_serial_types().unwrap();
+            let cells = page.index_interior_cells()?;
+
+            for cell in &cells {
+                let mut info = cell.build_serial_types()?;
 
                 let text = info.remove(0);
                 let key = if let SerialValue::Text(key) = text {
@@ -247,18 +249,34 @@ pub fn get_row_ids(
                 }
                 .unwrap();
 
-                if value < key.as_str() {
-                    get_row_ids(file, page_size, child.left_child as usize, rows, value)?;
+                let row_id = info.remove(0);
+
+                let row_id = if let SerialValue::Integer(row_id) = row_id {
+                    Some(row_id)
                 } else {
-                    get_row_ids(
-                        file,
-                        page_size,
-                        page.page_header.right_page_number.unwrap() as usize,
-                        rows,
-                        value,
-                    )?;
+                    None
+                }
+                .unwrap();
+
+                if value < key.as_str() {
+                    get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
+                }
+
+                if value == key {
+                    rows.push(row_id);
+                    get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
                 }
             }
+
+            // Target is greater than all separators,
+            // or equal to the last separator.
+            get_row_ids(
+                file,
+                page_size,
+                page.page_header.right_page_number.unwrap() as usize,
+                rows,
+                value,
+            )?;
         }
         PageType::IndexLeaf => {
             for cell in page.index_leaf_cells().unwrap() {
@@ -282,7 +300,7 @@ pub fn get_row_ids(
 
                 // println!("{:?}. {}", key, row_id);
                 if key == value {
-                    rows.push(row_id as u64);
+                    rows.push(row_id);
                 }
             }
         }
@@ -306,7 +324,6 @@ pub fn traverse_b_tree_table(
             let cells = page.table_interior_cells().unwrap();
 
             let cell = cells.iter().find(|cell| row_id < cell.row_id);
-            println!("{:?}", cell);
 
             match cell {
                 Some(cell) => {
