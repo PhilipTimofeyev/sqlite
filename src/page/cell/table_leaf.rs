@@ -228,10 +228,15 @@ impl IndexInteriorCell {
             match serial_type {
                 // NEEDS TO HANDLE 0 to 8 bytes
                 SerialType::Integer(bytes) => {
-                    // NEED TO ACCEPT 1 THROUGH 8 Bytes
                     let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
-                    let value = buf.remove(0) as u64;
+
+                    let mut value = 0u64;
+
+                    for byte in buf {
+                        value = (value << 8) | byte as u64;
+                    }
+
                     schema_vec.push(SerialValue::Integer(value));
                 }
                 SerialType::Text(bytes) => {
@@ -314,12 +319,16 @@ impl IndexLeafCell {
 
         for serial_type in &serial_types {
             match serial_type {
-                // NEEDS TO HANDLE 0 to 8 bytes
                 SerialType::Integer(bytes) => {
-                    // NEED TO ACCEPT 1 THROUGH 8 Bytes
                     let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
-                    let value = buf.remove(0) as u64;
+
+                    let mut value = 0u64;
+
+                    for byte in buf {
+                        value = (value << 8) | byte as u64;
+                    }
+
                     schema_vec.push(SerialValue::Integer(value));
                 }
                 SerialType::Text(bytes) => {
@@ -378,12 +387,16 @@ impl TableLeafCell {
 
         for serial_type in &serial_types {
             match serial_type {
-                // NEEDS TO HANDLE 0 to 8 bytes
                 SerialType::Integer(bytes) => {
-                    // NEED TO ACCEPT 1 THROUGH 8 Bytes
                     let mut buf = vec![0; *bytes];
                     cursor.read_exact(&mut buf)?;
-                    let value = buf.remove(0) as u64;
+
+                    let mut value = 0u64;
+
+                    for byte in buf {
+                        value = (value << 8) | byte as u64;
+                    }
+
                     schema_vec.push(SerialValue::Integer(value));
                 }
                 SerialType::Text(bytes) => {
