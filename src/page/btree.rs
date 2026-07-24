@@ -1,8 +1,8 @@
 use super::super::header::DatabaseHeader;
 use super::header::{PageHeader, PageType};
-use crate::page::cell::table_leaf::{
-    self, IndexInteriorCell, IndexLeafCell, SerialValue, TableInteriorCell, TableLeafCell,
-};
+use crate::page::cell::table_interior::TableInteriorCell;
+use crate::page::cell::table_leaf::{IndexInteriorCell, IndexLeafCell, TableLeafCell};
+use crate::page::cell::{Schema, SerialValue};
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -160,7 +160,7 @@ impl BTreePage {
             .ok_or_else(|| anyhow!("Table `{}` not found", table))
     }
 
-    pub fn find_column(&self, table: &str, column: &str) -> Result<table_leaf::Schema> {
+    pub fn find_column(&self, table: &str, column: &str) -> Result<Schema> {
         for cell in self.table_leaf_cells()? {
             let schema = cell.sqlite_schema()?;
             if schema.sql_contains_str(column) && schema.table_name == table {

@@ -1,4 +1,4 @@
-use crate::page::cell::table_leaf::SerialValue;
+use crate::page::cell::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::{self, btree};
