@@ -225,50 +225,133 @@ pub fn display_string_vector(vector: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-pub fn traverse_b_tree(
+pub fn get_row_ids(
     file: &mut File,
     page_size: u16,
     page_number: usize,
-    rows: &mut Vec<Row>,
+    rows: &mut Vec<i64>,
+    value: &str,
 ) -> Result<()> {
     let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
 
     match page.page_header.page_type {
-        PageType::TableInterior => {
-            for child in page.table_interior_cells().unwrap() {
-                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
-            }
-        }
-
-        PageType::TableLeaf => {
-            for cell in page.table_leaf_cells().unwrap() {
-                let values = cell.build_serial_types().unwrap();
-                let row = Row {
-                    row_id: cell.row_id,
-                    values,
-                };
-                rows.push(row);
-            }
-        }
+        // PageType::TableInterior => {
+        //     for child in page.table_interior_cells().unwrap() {
+        //         traverse_b_tree(file, page_size, child.left_child as usize, rows, value)?;
+        //     }
+        // }
+        //
+        // PageType::TableLeaf => {
+        //     for cell in page.table_leaf_cells().unwrap() {
+        //         let values = cell.build_serial_types().unwrap();
+        //         let row = Row {
+        //             row_id: cell.row_id,
+        //             values,
+        //         };
+        //         rows.push(row);
+        //     }
+        // }
         PageType::IndexInterior => {
+            // println!("{:?}", page);
             for child in page.index_interior_cells().unwrap() {
-                traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+                let mut info = child.build_serial_types().unwrap();
+
+                let text = info.remove(0);
+                let key = if let SerialValue::Text(key) = text {
+                    Some(key)
+                } else {
+                    None
+                }
+                .unwrap();
+
+                if value < key.as_str() {
+                    get_row_ids(file, page_size, child.left_child as usize, rows, value)?;
+                } else {
+                    get_row_ids(
+                        file,
+                        page_size,
+                        page.page_header.right_page_number.unwrap() as usize,
+                        rows,
+                        value,
+                    )?;
+                }
             }
         }
         PageType::IndexLeaf => {
             for cell in page.index_leaf_cells().unwrap() {
-                let values = cell.build_serial_types().unwrap();
-                // let row = Row {
-                //     row_id: cell.row_id,
-                //     values,
-                // };
-                // rows.push(row);
+                let mut info = cell.build_serial_types().unwrap();
+                let text = info.remove(0);
+                let key = if let SerialValue::Text(key) = text {
+                    Some(key)
+                } else {
+                    None
+                }
+                .unwrap();
+
+                let row_id = info.remove(0);
+
+                let row_id = if let SerialValue::Integer(row_id) = row_id {
+                    Some(row_id)
+                } else {
+                    None
+                }
+                .unwrap();
+
+                if key == value {
+                    rows.push(row_id as i64);
+                }
             }
         }
+        _ => todo!(),
     }
 
     Ok(())
 }
+
+// pub fn traverse_b_tree_table(
+//     file: &mut File,
+//     page_size: u16,
+//     page_number: usize,
+//     rows: &mut Vec<Row>,
+// ) -> Result<()> {
+//     let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
+//
+//     match page.page_header.page_type {
+//         PageType::TableInterior => {
+//             for child in page.table_interior_cells().unwrap() {
+//                 traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+//             }
+//         }
+//
+//         PageType::TableLeaf => {
+//             for cell in page.table_leaf_cells().unwrap() {
+//                 let values = cell.build_serial_types().unwrap();
+//                 let row = Row {
+//                     row_id: cell.row_id,
+//                     values,
+//                 };
+//                 rows.push(row);
+//             }
+//         }
+//         PageType::IndexInterior => {
+//             for child in page.index_interior_cells().unwrap() {
+//                 traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+//             }
+//         }
+//         PageType::IndexLeaf => {
+//             for cell in page.index_leaf_cells().unwrap() {
+//                 let values = cell.build_serial_types().unwrap();
+//                 // let row = Row {
+//                 //     row_id: cell.row_id,
+//                 //     values,
+//                 // };
+//                 // rows.push(row);
+//             }
+//         }
+//     }
+//
+//     Ok(())
+// }
 
 #[derive(Debug)]
 pub struct Row {

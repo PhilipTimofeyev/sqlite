@@ -16,8 +16,6 @@ fn main() -> Result<()> {
     let command = &args[2];
     let mut file = File::open(&args[1])?;
     let root_page = page::btree::BTreePage::build_root_page(&mut file)?;
-    let a = root_page.get_index_page()?;
-    println!("{:?}", a);
 
     // let cells = root_page.cells()?;
     //
@@ -46,20 +44,20 @@ fn main() -> Result<()> {
             let table_names = root_page.table_names()?;
             page::btree::display_string_vector(table_names)?;
         }
-        cmd if cmd.to_lowercase().contains("select count(*)") => {
-            // Example command: "SELECT COUNT(*) FROM apples"
-            // Last argument is the table to get count from
-
-            let mut split_command = command::split_command(cmd);
-            let table_name = split_command.remove(split_command.len() - 1);
-            let page_number = root_page.find_table_page(&table_name)?;
-            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
-
-            let mut rows = Vec::new();
-            page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
-
-            println!("{}", rows.len())
-        }
+        // cmd if cmd.to_lowercase().contains("select count(*)") => {
+        //     // Example command: "SELECT COUNT(*) FROM apples"
+        //     // Last argument is the table to get count from
+        //
+        //     let mut split_command = command::split_command(cmd);
+        //     let table_name = split_command.remove(split_command.len() - 1);
+        //     let page_number = root_page.find_table_page(&table_name)?;
+        //     let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
+        //
+        //     let mut rows = Vec::new();
+        //     page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
+        //
+        //     println!("{}", rows.len())
+        // }
         cmd if cmd.to_lowercase().contains("where") => {
             // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
             // Everything between SELECT and FROM are the columns, retaining order
@@ -79,48 +77,62 @@ fn main() -> Result<()> {
             let column_index = root_page.column_index(&where_column, &table_name)?;
             let column_indices = root_page.indicies_of_columns(columns, table_name)?;
 
-            let mut rows = Vec::new();
-            page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
+            let index_page = root_page.get_index_page()?;
 
-            let mut filtered_rows = Vec::new();
-            for row in rows {
-                let col_value = match &row.values[column_index] {
-                    SerialValue::Text(value) => value.to_string(),
-                    SerialValue::Null => row.row_id.to_string(),
-                    _ => todo!(),
-                };
-
-                if col_value == where_column_value {
-                    filtered_rows.push(row)
-                };
+            match index_page {
+                Some(index_page) => {
+                    let mut rows = Vec::new();
+                    page::btree::get_row_ids(
+                        &mut file,
+                        page_size,
+                        4,
+                        &mut rows,
+                        where_column_value.as_ref(),
+                    )?;
+                }
+                None => {
+                    todo!()
+                }
             }
 
-            let columns = read_columns(filtered_rows, column_indices);
-            display_columns(columns);
-        }
-
-        cmd if cmd.to_lowercase().contains("select") => {
-            // Example command: "SELECT name, color FROM oranges"
-            // Everything between SELECT and FROM are the columns, retaining order
-            // Last word is table name
-
-            let split_command = command::split_command(cmd);
-            let table_name = command::parse_command_table_name(&split_command)?;
-            let columns = command::parse_command_columns(&split_command);
-
-            // Search root page cells for specific table, returning row id of table
-            let page_number = root_page.find_table_page(&table_name)? as usize;
-            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
-
-            // // Get column index of each specified column
-            let column_indices = root_page.indicies_of_columns(columns, table_name)?;
-
-            let mut rows = Vec::new();
-            page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
-
-            let columns = read_columns(rows, column_indices);
-            display_columns(columns);
-        }
+            //
+            // let mut filtered_rows = Vec::new();
+            // for row in rows {
+            //     let col_value = match &row.values[column_index] {
+            //         SerialValue::Text(value) => value.to_string(),
+            //         SerialValue::Null => row.row_id.to_string(),
+            //         _ => todo!(),
+            //     };
+            //
+            //     if col_value == where_column_value {
+            //         filtered_rows.push(row)
+            //     };
+            // }
+            //
+            // let columns = read_columns(filtered_rows, column_indices);
+            // display_columns(columns);
+        } // cmd if cmd.to_lowercase().contains("select") => {
+        //     // Example command: "SELECT name, color FROM oranges"
+        //     // Everything between SELECT and FROM are the columns, retaining order
+        //     // Last word is table name
+        //
+        //     let split_command = command::split_command(cmd);
+        //     let table_name = command::parse_command_table_name(&split_command)?;
+        //     let columns = command::parse_command_columns(&split_command);
+        //
+        //     // Search root page cells for specific table, returning row id of table
+        //     let page_number = root_page.find_table_page(&table_name)? as usize;
+        //     let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
+        //
+        //     // // Get column index of each specified column
+        //     let column_indices = root_page.indicies_of_columns(columns, table_name)?;
+        //
+        //     let mut rows = Vec::new();
+        //     page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
+        //
+        //     let columns = read_columns(rows, column_indices);
+        //     display_columns(columns);
+        // }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 

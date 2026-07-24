@@ -56,7 +56,7 @@ impl TryFrom<&[u8]> for IndexInteriorCell {
 
     fn try_from(bytes: &[u8]) -> Result<Self> {
         let left_child: u32 = u32::from_be_bytes(bytes[0..4].try_into()?);
-        let (payload_size, data) = parse_varint(bytes).unwrap();
+        let (payload_size, data) = parse_varint(&bytes[4..]).unwrap();
         let payload = &data[0..payload_size as usize];
 
         Ok(IndexInteriorCell {
@@ -117,6 +117,7 @@ impl SerialType {
 }
 
 pub fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
+    // println!("{:?}", data);
     for i in 0..9 {
         let Some(b) = data.get(i) else {
             panic!("Not enough bytes for varint");
@@ -210,6 +211,7 @@ impl IndexInteriorCell {
     pub fn build_serial_types(&self) -> Result<Vec<SerialValue>> {
         let mut serial_types = Vec::new();
 
+        // println!("{:?}", self.payload);
         let (header_size, bytes) = parse_varint(&self.payload).unwrap();
         let varints = parse_header_varints(&bytes[0..header_size as usize - 1]);
 

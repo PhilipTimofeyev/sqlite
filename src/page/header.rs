@@ -10,7 +10,7 @@ pub struct PageHeader {
     pub cell_count: u16,
     pub cell_content_area_start: u16,
     fragment_free_bytes: u8,
-    pub page_number: Option<u32>, // Only for interior b-tree page
+    pub right_page_number: Option<u32>, // Only for interior b-tree page
 }
 
 impl PageHeader {
@@ -61,7 +61,7 @@ impl TryFrom<&[u8]> for PageHeader {
         let cell_content_area_start = u16::from_be_bytes(cell_content_area);
         let fragment_free_bytes = u8::from_be_bytes(fragment_free_bytes);
 
-        let page_number = Some(u32::from_be_bytes(page_number));
+        let right_page_number = Some(u32::from_be_bytes(page_number));
 
         let page_header = PageHeader {
             page_type: page_type?,
@@ -69,7 +69,7 @@ impl TryFrom<&[u8]> for PageHeader {
             cell_count,
             cell_content_area_start,
             fragment_free_bytes,
-            page_number,
+            right_page_number,
         };
 
         Ok(page_header)
