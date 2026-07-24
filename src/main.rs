@@ -1,7 +1,6 @@
 use crate::page::cell::table_leaf::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
-use codecrafters_sqlite::page::header::PageType;
 use codecrafters_sqlite::page::{self, btree};
 use std::fs::File;
 
@@ -16,18 +15,6 @@ fn main() -> Result<()> {
     let command = &args[2];
     let mut file = File::open(&args[1])?;
     let root_page = page::btree::BTreePage::build_root_page(&mut file)?;
-
-    // let cells = root_page.cells()?;
-    //
-    // for cell in cells {
-    //     match cell {
-    //         TableCell::Leaf(leaf_cell) => {
-    //             let values = leaf_cell.sqlite_schema();
-    //             println!("{:?}", values);
-    //         }
-    //         TableCell::Interior(_) => {}
-    //     }
-    // }
 
     match command.as_str() {
         ".dbinfo" => {
@@ -128,23 +115,6 @@ fn main() -> Result<()> {
                     display_columns(columns);
                 }
             }
-
-            //
-            // let mut filtered_rows = Vec::new();
-            // for row in rows {
-            //     let col_value = match &row.values[column_index] {
-            //         SerialValue::Text(value) => value.to_string(),
-            //         SerialValue::Null => row.row_id.to_string(),
-            //         _ => todo!(),
-            //     };
-            //
-            //     if col_value == where_column_value {
-            //         filtered_rows.push(row)
-            //     };
-            // }
-            //
-            // let columns = read_columns(filtered_rows, column_indices);
-            // display_columns(columns);
         }
         cmd if cmd.to_lowercase().contains("select") => {
             // Example command: "SELECT name, color FROM oranges"

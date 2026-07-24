@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use std::any::Any;
 use std::io::{Cursor, Read};
 
 // A Table Leaf Cell conceptually is like a row in a table
@@ -31,14 +32,6 @@ pub struct IndexLeafCell {
     payload: Vec<u8>,
     overflow_page_num: Option<u32>,
 }
-
-// #[derive(Debug)]
-// pub enum TableCell {
-//     Interior(TableInteriorCell),
-//     Leaf(TableLeafCell),
-//     IndexInterior(IndexInteriorCell),
-//     IndexLeaf(IndexLeafCell),
-// }
 
 impl TryFrom<&[u8]> for TableInteriorCell {
     type Error = anyhow::Error;

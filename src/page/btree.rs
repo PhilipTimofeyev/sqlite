@@ -27,7 +27,6 @@ impl BTreePage {
         };
 
         let data = bytes;
-        // cursor.read_to_end(&mut data)?;
 
         Ok(BTreePage {
             file_header,
@@ -38,7 +37,6 @@ impl BTreePage {
     }
 
     pub fn build_root_page(file: &mut File) -> Result<BTreePage> {
-        // Build root page
         let mut header = [0; 100];
 
         file.read_exact(&mut header)?;
@@ -50,6 +48,20 @@ impl BTreePage {
 
         let root_page = BTreePage::new(root_page, Some(database_header))?;
         Ok(root_page)
+    }
+
+    // Takes a File, uses the page number and page size to figure out where in the file the page is,
+    // builds the page
+    pub fn build_page(file: &mut File, page_size: usize, page_num: usize) -> Result<BTreePage> {
+        let page_offset = (page_num as u64 - 1) * page_size as u64;
+
+        file.seek(SeekFrom::Start(page_offset))?;
+
+        let mut page = vec![0; page_size];
+        file.read_exact(&mut page)?;
+
+        let page = BTreePage::new(page, None)?;
+        Ok(page)
     }
 
     pub fn get_index_page(&self) -> Result<Option<u32>> {
@@ -66,81 +78,36 @@ impl BTreePage {
         }
     }
 
-    // REFACTOR WITH ROOT PAGE
-    pub fn build_page(file: &mut File, page_size: usize, page_num: usize) -> Result<BTreePage> {
-        let page_offset = (page_num as u64 - 1) * page_size as u64;
-
-        file.seek(SeekFrom::Start(page_offset))?;
-
-        let mut page = vec![0; page_size];
-        file.read_exact(&mut page)?;
-
-        let page = BTreePage::new(page, None)?;
-        Ok(page)
+    pub fn table_interior_cells(&self) -> Result<Vec<TableInteriorCell>> {
+        self.build_cells(|data| TableInteriorCell::try_from(data))
     }
 
-    pub fn table_interior_cells(&self) -> Result<Vec<table_leaf::TableInteriorCell>> {
-        let cell_pointers = &self.cell_pointer_array;
+    pub fn table_leaf_cells(&self) -> Result<Vec<TableLeafCell>> {
+        self.build_cells(|data| TableLeafCell::try_from(data))
+    }
 
+    pub fn index_leaf_cells(&self) -> Result<Vec<IndexLeafCell>> {
+        self.build_cells(|data| IndexLeafCell::try_from(data))
+    }
+
+    pub fn index_interior_cells(&self) -> Result<Vec<IndexInteriorCell>> {
+        self.build_cells(|data| IndexInteriorCell::try_from(data))
+    }
+
+    fn build_cells<T, F>(&self, parser: F) -> Result<Vec<T>>
+    where
+        F: Fn(&[u8]) -> Result<T>,
+    {
         let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
-        for pointer in cell_pointers {
+
+        for pointer in &self.cell_pointer_array {
             let offset = if self.file_header.is_some() {
-                (pointer - 100) as usize
+                (*pointer - 100) as usize
             } else {
                 *pointer as usize
             };
-            let cell = TableInteriorCell::try_from(&self.data[offset..])?;
-            cells.push(cell);
-        }
 
-        Ok(cells)
-    }
-
-    pub fn index_interior_cells(&self) -> Result<Vec<table_leaf::IndexInteriorCell>> {
-        let cell_pointers = &self.cell_pointer_array;
-
-        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
-        for pointer in cell_pointers {
-            let offset = if self.file_header.is_some() {
-                (pointer - 100) as usize
-            } else {
-                *pointer as usize
-            };
-            let cell = IndexInteriorCell::try_from(&self.data[offset..])?;
-            cells.push(cell);
-        }
-
-        Ok(cells)
-    }
-
-    pub fn index_leaf_cells(&self) -> Result<Vec<table_leaf::IndexLeafCell>> {
-        let cell_pointers = &self.cell_pointer_array;
-
-        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
-        for pointer in cell_pointers {
-            let offset = if self.file_header.is_some() {
-                (pointer - 100) as usize
-            } else {
-                *pointer as usize
-            };
-            let cell = IndexLeafCell::try_from(&self.data[offset..])?;
-            cells.push(cell);
-        }
-
-        Ok(cells)
-    }
-
-    pub fn table_leaf_cells(&self) -> Result<Vec<table_leaf::TableLeafCell>> {
-        let cell_pointers = &self.cell_pointer_array;
-
-        let mut cells = Vec::with_capacity(self.cell_pointer_array.len());
-        for pointer in cell_pointers {
-            let offset = if self.file_header.is_some() {
-                (pointer - 100) as usize
-            } else {
-                *pointer as usize
-            };
-            let cell = TableLeafCell::try_from(&self.data[offset..])?;
+            let cell = parser(&self.data[offset..])?;
             cells.push(cell);
         }
 
