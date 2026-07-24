@@ -1,6 +1,8 @@
+pub mod index_interior;
+pub mod index_leaf;
 pub mod table_interior;
 pub mod table_leaf;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 #[allow(dead_code)]
 #[derive(Debug)]

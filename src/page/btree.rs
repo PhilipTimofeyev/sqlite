@@ -1,7 +1,9 @@
 use super::super::header::DatabaseHeader;
 use super::header::{PageHeader, PageType};
+use crate::page::cell::index_interior::IndexInteriorCell;
+use crate::page::cell::index_leaf::IndexLeafCell;
 use crate::page::cell::table_interior::TableInteriorCell;
-use crate::page::cell::table_leaf::{IndexInteriorCell, IndexLeafCell, TableLeafCell};
+use crate::page::cell::table_leaf::TableLeafCell;
 use crate::page::cell::{Schema, SerialValue};
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
