@@ -229,30 +229,13 @@ pub fn get_row_ids(
     file: &mut File,
     page_size: u16,
     page_number: usize,
-    rows: &mut Vec<i64>,
+    rows: &mut Vec<u64>,
     value: &str,
 ) -> Result<()> {
     let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
 
     match page.page_header.page_type {
-        // PageType::TableInterior => {
-        //     for child in page.table_interior_cells().unwrap() {
-        //         traverse_b_tree(file, page_size, child.left_child as usize, rows, value)?;
-        //     }
-        // }
-        //
-        // PageType::TableLeaf => {
-        //     for cell in page.table_leaf_cells().unwrap() {
-        //         let values = cell.build_serial_types().unwrap();
-        //         let row = Row {
-        //             row_id: cell.row_id,
-        //             values,
-        //         };
-        //         rows.push(row);
-        //     }
-        // }
         PageType::IndexInterior => {
-            // println!("{:?}", page);
             for child in page.index_interior_cells().unwrap() {
                 let mut info = child.build_serial_types().unwrap();
 
@@ -297,11 +280,65 @@ pub fn get_row_ids(
                 }
                 .unwrap();
 
+                // println!("{:?}. {}", key, row_id);
                 if key == value {
-                    rows.push(row_id as i64);
+                    rows.push(row_id as u64);
                 }
             }
         }
+        _ => todo!(),
+    }
+
+    Ok(())
+}
+
+pub fn traverse_b_tree_table(
+    file: &mut File,
+    page_size: u16,
+    page_number: usize,
+    rows: &mut Vec<Row>,
+    row_id: u64,
+) -> Result<()> {
+    let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
+
+    match page.page_header.page_type {
+        PageType::TableInterior => {
+            let cells = page.table_interior_cells().unwrap();
+
+            let cell = cells.iter().find(|cell| row_id < cell.row_id);
+            println!("{:?}", cell);
+
+            match cell {
+                Some(cell) => {
+                    traverse_b_tree_table(file, page_size, cell.left_child as usize, rows, row_id)?;
+                }
+                None => {
+                    traverse_b_tree_table(
+                        file,
+                        page_size,
+                        page.page_header.right_page_number.unwrap() as usize,
+                        rows,
+                        row_id,
+                    )?;
+                }
+            }
+        }
+
+        PageType::TableLeaf => {
+            for cell in page.table_leaf_cells().unwrap() {
+                // println!("{:?}", cell.row_id);
+                // println!("{:?}", row_id);
+                if row_id == cell.row_id {
+                    let values = cell.build_serial_types().unwrap();
+                    let row = Row {
+                        row_id: cell.row_id,
+                        values,
+                    };
+                    rows.push(row);
+                }
+            }
+        } // PageType::IndexInterior => {
+
         _ => todo!(),
     }
 
@@ -319,7 +356,7 @@ pub fn get_row_ids(
 //     match page.page_header.page_type {
 //         PageType::TableInterior => {
 //             for child in page.table_interior_cells().unwrap() {
-//                 traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+//                 traverse_b_tree_table(file, page_size, child.left_child as usize, rows)?;
 //             }
 //         }
 //
@@ -335,7 +372,7 @@ pub fn get_row_ids(
 //         }
 //         PageType::IndexInterior => {
 //             for child in page.index_interior_cells().unwrap() {
-//                 traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
+//                 traverse_b_tree_table(file, page_size, child.left_child as usize, rows)?;
 //             }
 //         }
 //         PageType::IndexLeaf => {

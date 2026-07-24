@@ -81,14 +81,30 @@ fn main() -> Result<()> {
 
             match index_page {
                 Some(index_page) => {
-                    let mut rows = Vec::new();
+                    let mut row_ids = Vec::new();
                     page::btree::get_row_ids(
                         &mut file,
                         page_size,
-                        4,
-                        &mut rows,
+                        index_page as usize,
+                        &mut row_ids,
                         where_column_value.as_ref(),
                     )?;
+
+                    println!("{:?}", row_ids);
+
+                    let mut rows = Vec::new();
+                    page::btree::traverse_b_tree_table(
+                        &mut file,
+                        page_size,
+                        page_number,
+                        &mut rows,
+                        row_ids.remove(0),
+                    )?;
+
+                    let columns = read_columns(rows, column_indices);
+                    display_columns(columns);
+                    //
+                    // println!("{:?}", rows);
                 }
                 None => {
                     todo!()
