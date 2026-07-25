@@ -2,7 +2,7 @@ pub mod index_interior;
 pub mod index_leaf;
 pub mod table_interior;
 pub mod table_leaf;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
@@ -139,7 +139,7 @@ fn parse_header_varints(mut data: &[u8]) -> Result<Vec<u64>> {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Schema {
     schema_type: String,
     pub name: String,
@@ -154,6 +154,28 @@ impl Schema {
     }
 
     pub fn column_position(&self, column_name: &str) -> Result<usize> {
+        let sql = self.sql.clone();
+
+        let start = sql.find('(').ok_or_else(|| anyhow!("No opening paren"))?;
+        let end = sql.rfind(')').ok_or_else(|| anyhow!("No closing paren"))?;
+
+        let columns = &sql[start + 1..end];
+        let columns: Vec<&str> = columns.split(',').map(str::trim).collect();
+
+        let column = columns
+            .iter()
+            .position(|column| {
+                column
+                    .to_lowercase()
+                    .as_str()
+                    .contains(column_name.to_lowercase().as_str())
+            })
+            .unwrap();
+
+        Ok(column)
+    }
+
+    pub fn column_position_old(&self, column_name: &str) -> Result<usize> {
         let schema_sql = self.sql.clone();
         let columns = schema_sql.split(&['(', ')'][..]).collect::<Vec<&str>>();
         let columns = columns[..columns.len() - 1]
@@ -164,7 +186,12 @@ impl Schema {
 
         let column = columns
             .iter()
-            .position(|column| column.contains(column_name))
+            .position(|column| {
+                column
+                    .to_lowercase()
+                    .as_str()
+                    .contains(column_name.to_lowercase().as_str())
+            })
             .unwrap();
 
         Ok(column)
