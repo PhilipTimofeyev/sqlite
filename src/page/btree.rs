@@ -4,7 +4,7 @@ use crate::page::cell::index_interior::IndexInteriorCell;
 use crate::page::cell::index_leaf::IndexLeafCell;
 use crate::page::cell::table_interior::TableInteriorCell;
 use crate::page::cell::table_leaf::TableLeafCell;
-use crate::page::cell::{Schema, SerialValue};
+use crate::page::cell::{build_serial_values, Schema, SerialValue};
 use anyhow::{anyhow, bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -208,7 +208,7 @@ pub fn get_row_ids(
             let cells = page.index_interior_cells()?;
 
             for cell in &cells {
-                let mut info = cell.build_serial_types()?;
+                let mut info = build_serial_values(&cell.payload)?;
 
                 let text = info.remove(0);
                 let key = if let SerialValue::Text(key) = text {
@@ -250,15 +250,14 @@ pub fn get_row_ids(
             )?;
         }
         PageType::IndexLeaf => {
-            for cell in page.index_leaf_cells().unwrap() {
-                let mut info = cell.build_serial_types().unwrap();
+            for cell in page.index_leaf_cells()? {
+                let mut info = build_serial_values(&cell.payload)?;
                 let text = info.remove(0);
                 let key = if let SerialValue::Text(key) = text {
                     Some(key)
                 } else {
                     None
-                }
-                .unwrap();
+                };
 
                 let row_id = info.remove(0);
 
@@ -266,13 +265,17 @@ pub fn get_row_ids(
                     Some(row_id)
                 } else {
                     None
+                };
+
+                if let Some(key) = key {
+                    if let Some(row_id) = row_id {
+                        if key == value {
+                            rows.push(row_id);
+                        }
+                    }
                 }
-                .unwrap();
 
                 // println!("{:?}. {}", key, row_id);
-                if key == value {
-                    rows.push(row_id);
-                }
             }
         }
         _ => todo!(),
@@ -292,7 +295,7 @@ pub fn traverse_b_tree_table(
 
     match page.page_header.page_type {
         PageType::TableInterior => {
-            let cells = page.table_interior_cells().unwrap();
+            let cells = page.table_interior_cells()?;
 
             let cell = cells.iter().find(|cell| row_id < cell.row_id);
 
@@ -314,10 +317,8 @@ pub fn traverse_b_tree_table(
 
         PageType::TableLeaf => {
             for cell in page.table_leaf_cells().unwrap() {
-                // println!("{:?}", cell.row_id);
-                // println!("{:?}", row_id);
                 if row_id == cell.row_id {
-                    let values = cell.build_serial_types().unwrap();
+                    let values = build_serial_values(&cell.payload)?;
                     let row = Row {
                         row_id: cell.row_id,
                         values,
@@ -325,8 +326,7 @@ pub fn traverse_b_tree_table(
                     rows.push(row);
                 }
             }
-        } // PageType::IndexInterior => {
-
+        }
         _ => todo!(),
     }
 
@@ -350,7 +350,7 @@ pub fn traverse_b_tree(
 
         PageType::TableLeaf => {
             for cell in page.table_leaf_cells().unwrap() {
-                let values = cell.build_serial_types().unwrap();
+                let values = build_serial_values(&cell.payload)?;
                 let row = Row {
                     row_id: cell.row_id,
                     values,
@@ -363,16 +363,7 @@ pub fn traverse_b_tree(
                 traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
             }
         }
-        PageType::IndexLeaf => {
-            for cell in page.index_leaf_cells().unwrap() {
-                let values = cell.build_serial_types().unwrap();
-                // let row = Row {
-                //     row_id: cell.row_id,
-                //     values,
-                // };
-                // rows.push(row);
-            }
-        }
+        PageType::IndexLeaf => {}
     }
 
     Ok(())

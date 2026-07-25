@@ -3,12 +3,15 @@ pub mod index_leaf;
 pub mod table_interior;
 pub mod table_leaf;
 use anyhow::Result;
+use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
 #[derive(Debug)]
 pub enum SerialType {
     Null,
     Integer(usize),
+    IntegerConstant(u64),
+    Float(usize),
     Blob(usize),
     Text(usize),
 }
@@ -25,16 +28,74 @@ pub enum SerialValue {
 impl SerialType {
     fn from_code(code: u64) -> Self {
         match code {
-            n @ 1..7 => SerialType::Integer(n as usize),
-            // Need to check 8 and 9
-            8 => SerialType::Null,
-            9 => SerialType::Null,
+            0 => SerialType::Null,
+            n @ 1..=4 => SerialType::Integer(n as usize),
+            5 => SerialType::Integer(6),
+            6 => SerialType::Integer(8),
+            7 => SerialType::Float(8),
+            8 => SerialType::IntegerConstant(0),
+            9 => SerialType::IntegerConstant(1),
             n if n >= 12 && n % 2 == 0 => SerialType::Blob(((n - 12) / 2) as usize),
             n if n >= 13 && n % 2 == 1 => SerialType::Text(((n - 13) / 2) as usize),
-            0 => SerialType::Null,
             _ => todo!(),
         }
     }
+}
+
+pub fn build_serial_types(header_size: u64, payload: &[u8]) -> Result<Vec<SerialType>> {
+    let mut serial_types = Vec::new();
+    let varints = parse_header_varints(&payload[0..header_size as usize - 1])?;
+
+    for code in varints {
+        let serial_type = SerialType::from_code(code);
+        serial_types.push(serial_type);
+    }
+
+    Ok(serial_types)
+}
+
+pub fn build_serial_values(payload: &[u8]) -> Result<Vec<SerialValue>> {
+    let (header_size, bytes) = parse_varint(payload)?;
+
+    let serial_types = build_serial_types(header_size, bytes)?;
+
+    let mut cursor = Cursor::new(payload);
+    cursor.set_position(header_size);
+    let mut serial_values = Vec::new();
+
+    for serial_type in &serial_types {
+        match serial_type {
+            SerialType::Integer(bytes) => {
+                let mut buf = vec![0; *bytes];
+                cursor.read_exact(&mut buf)?;
+                let mut value = 0u64;
+
+                for byte in buf {
+                    value = (value << 8) | byte as u64;
+                }
+
+                serial_values.push(SerialValue::Integer(value));
+            }
+            SerialType::IntegerConstant(i) => serial_values.push(SerialValue::Integer(*i)),
+            SerialType::Text(bytes) => {
+                let mut buf = vec![0; *bytes];
+                cursor.read_exact(&mut buf)?;
+                let value = String::from_utf8(buf.clone()).unwrap();
+                serial_values.push(SerialValue::Text(value));
+            }
+            SerialType::Blob(bytes) => {
+                let mut buf = vec![0; *bytes];
+                cursor.read_exact(&mut buf)?;
+                serial_values.push(SerialValue::Blob(buf));
+            }
+            SerialType::Null => {
+                serial_values.push(SerialValue::Null);
+            }
+            _ => todo!(),
+        }
+    }
+
+    Ok(serial_values)
 }
 
 pub fn parse_varint(data: &[u8]) -> Result<(u64, &[u8])> {

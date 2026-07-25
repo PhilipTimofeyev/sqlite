@@ -91,8 +91,6 @@ fn main() -> Result<()> {
 
                     let columns = read_columns(rows, column_indices);
                     display_columns(columns);
-                    //
-                    // println!("{:?}", rows);
                 }
                 None => {
                     let mut rows = Vec::new();
