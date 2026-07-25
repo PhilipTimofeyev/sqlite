@@ -1,7 +1,7 @@
-use crate::page::cell::build_serial_values;
-
 use super::{parse_varint, Schema, SerialValue};
+use crate::page::cell::build_serial_values;
 use anyhow::{anyhow, Result};
+use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -16,15 +16,25 @@ impl TryFrom<&[u8]> for TableLeafCell {
     type Error = anyhow::Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self> {
-        let (payload_size, data) = parse_varint(bytes).unwrap();
-        let (row_id, data) = parse_varint(data).unwrap();
+        let (payload_size, data) = parse_varint(bytes)?;
+        let (row_id, data) = parse_varint(data)?;
         let payload = &data[0..payload_size as usize];
+
+        let mut cursor = Cursor::new(data);
+        let overflow_page_start = payload_size;
+
+        cursor.set_position(overflow_page_start);
+        let mut buf = [0; 4];
+        let overflow_page_num = match cursor.read_exact(&mut buf) {
+            Ok(_) => Some(u32::from_be_bytes(buf)),
+            Err(_) => None,
+        };
 
         Ok(TableLeafCell {
             payload_size,
             row_id,
             payload: payload.to_vec(),
-            overflow_page_num: None,
+            overflow_page_num,
         })
     }
 }

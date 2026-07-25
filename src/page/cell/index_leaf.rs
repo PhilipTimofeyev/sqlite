@@ -1,7 +1,7 @@
-use crate::page::cell::build_serial_values;
-
 use super::{parse_varint, Schema, SerialValue};
+use crate::page::cell::build_serial_values;
 use anyhow::{anyhow, Result};
+use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -15,13 +15,22 @@ impl TryFrom<&[u8]> for IndexLeafCell {
     type Error = anyhow::Error;
 
     fn try_from(bytes: &[u8]) -> Result<Self> {
+        let mut cursor = Cursor::new(bytes);
         let (payload_size, data) = parse_varint(bytes).unwrap();
         let payload = &data[0..payload_size as usize];
+
+        cursor.set_position(payload_size);
+
+        let mut buf = [0; 4];
+        let overflow_page_num = match cursor.read_exact(&mut buf) {
+            Ok(_) => Some(u32::from_be_bytes(buf)),
+            Err(_) => None,
+        };
 
         Ok(IndexLeafCell {
             payload_size,
             payload: payload.to_vec(),
-            overflow_page_num: None,
+            overflow_page_num,
         })
     }
 }
