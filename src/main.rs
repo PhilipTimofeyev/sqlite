@@ -2,9 +2,10 @@ use crate::page::cell::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::btree::{
-    find_table_page, get_table_names, indicies_of_columns, schemas,
+    column_index, display_columns, find_table_page, get_index_page, get_table_names,
+    indicies_of_columns, read_columns, schemas,
 };
-use codecrafters_sqlite::page::{self, btree};
+use codecrafters_sqlite::page::{self};
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -20,6 +21,10 @@ fn main() -> Result<()> {
     let root_page = page::btree::BTreePage::build_root_page(&mut file)?;
     let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
     let schemas = schemas(&mut file, page_size, &root_page)?;
+
+    // for schema in &schemas {
+    //     println!("\n{:?}", schema.schema_type);
+    // }
 
     match command.as_str() {
         ".dbinfo" => {
@@ -64,10 +69,12 @@ fn main() -> Result<()> {
             let page_number = find_table_page(schemas.as_slice(), &table_name)? as usize;
 
             // Get column index of each specified column
-            let column_index = root_page.column_index(&where_column, &table_name)?;
-            let column_indices = root_page.indicies_of_columns(columns, table_name)?;
+            let column_index = column_index(&schemas, &where_column, &table_name)?;
+            let column_indices = indicies_of_columns(schemas.as_slice(), columns, &table_name)?;
 
-            let index_page = root_page.get_index_page()?;
+            let index_page = get_index_page(&schemas, &table_name)?;
+
+            // let index_page = root_page.get_index_page()?;
 
             match index_page {
                 Some(index_page) => {
@@ -130,7 +137,7 @@ fn main() -> Result<()> {
             let page_number = find_table_page(schemas.as_slice(), &table_name)? as usize;
             //
             // // // Get column index of each specified column
-            let column_indices = indicies_of_columns(schemas.as_slice(), columns, table_name)?;
+            let column_indices = indicies_of_columns(schemas.as_slice(), columns, &table_name)?;
             //
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
@@ -142,31 +149,4 @@ fn main() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn read_columns(rows: Vec<btree::Row>, column_indices: Vec<usize>) -> Vec<Vec<String>> {
-    let mut column_values = Vec::new();
-    for row in rows {
-        let mut row_cols = Vec::new();
-        if column_indices.contains(&0) {
-            row_cols.push(row.row_id.to_string())
-        }
-        for column_index in column_indices.as_slice() {
-            match &row.values[*column_index] {
-                SerialValue::Text(value) => row_cols.push(value.clone()),
-                SerialValue::Null => (),
-                _ => todo!(),
-            };
-        }
-        column_values.push(row_cols);
-    }
-
-    column_values
-}
-
-fn display_columns(columns: Vec<Vec<String>>) {
-    for row in columns {
-        let columns = row.join("|");
-        println!("{columns}");
-    }
 }

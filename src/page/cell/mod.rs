@@ -141,7 +141,7 @@ fn parse_header_varints(mut data: &[u8]) -> Result<Vec<u64>> {
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Schema {
-    schema_type: String,
+    pub schema_type: String,
     pub name: String,
     pub table_name: String,
     pub root_page: usize,
@@ -161,28 +161,6 @@ impl Schema {
 
         let columns = &sql[start + 1..end];
         let columns: Vec<&str> = columns.split(',').map(str::trim).collect();
-
-        let column = columns
-            .iter()
-            .position(|column| {
-                column
-                    .to_lowercase()
-                    .as_str()
-                    .contains(column_name.to_lowercase().as_str())
-            })
-            .unwrap();
-
-        Ok(column)
-    }
-
-    pub fn column_position_old(&self, column_name: &str) -> Result<usize> {
-        let schema_sql = self.sql.clone();
-        let columns = schema_sql.split(&['(', ')'][..]).collect::<Vec<&str>>();
-        let columns = columns[..columns.len() - 1]
-            .last()
-            .unwrap()
-            .split(',')
-            .collect::<Vec<&str>>();
 
         let column = columns
             .iter()

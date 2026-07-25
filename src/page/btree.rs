@@ -5,7 +5,7 @@ use crate::page::cell::index_leaf::IndexLeafCell;
 use crate::page::cell::table_interior::TableInteriorCell;
 use crate::page::cell::table_leaf::TableLeafCell;
 use crate::page::cell::{build_serial_values, Schema, SerialValue};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
@@ -64,6 +64,20 @@ impl BTreePage {
 
         let page = BTreePage::new(page, None)?;
         Ok(page)
+    }
+
+    pub fn get_index_page_old(&self) -> Result<Option<u32>> {
+        let cells = self.table_leaf_cells()?;
+
+        let table_leaf_cell = cells.into_iter().find(|cell| cell.is_index_page().unwrap());
+
+        match table_leaf_cell {
+            Some(cell) => {
+                let root_page_num = cell.sqlite_schema().unwrap().root_page;
+                Ok(Some(root_page_num as u32))
+            }
+            None => Ok(None),
+        }
     }
 
     pub fn get_index_page(&self) -> Result<Option<u32>> {
@@ -444,7 +458,6 @@ pub fn find_column(schemas: &[Schema], table: &str, column: &str) -> Result<Sche
 
 pub fn column_index(schemas: &[Schema], column: &str, table_name: &str) -> Result<usize> {
     let schema = find_column(schemas, table_name, column)?;
-    println!("{:?}", schema.sql);
     let position = schema.column_position(column)?;
 
     Ok(position)
@@ -453,10 +466,93 @@ pub fn column_index(schemas: &[Schema], column: &str, table_name: &str) -> Resul
 pub fn indicies_of_columns(
     schemas: &[Schema],
     columns: Vec<String>,
-    table_name: String,
+    table_name: &str,
 ) -> Result<Vec<usize>> {
     columns
         .into_iter()
-        .map(|column| column_index(schemas, &column, &table_name))
+        .map(|column| column_index(schemas, &column, table_name))
         .collect()
+}
+
+pub fn read_columns(rows: Vec<Row>, column_indices: Vec<usize>) -> Vec<Vec<String>> {
+    let mut column_values = Vec::new();
+    for row in rows {
+        let mut row_cols = Vec::new();
+        if column_indices.contains(&0) {
+            row_cols.push(row.row_id.to_string())
+        }
+        for column_index in column_indices.as_slice() {
+            match &row.values[*column_index] {
+                SerialValue::Text(value) => row_cols.push(value.clone()),
+                SerialValue::Null => (),
+                _ => todo!(),
+            };
+        }
+        column_values.push(row_cols);
+    }
+
+    column_values
+}
+
+pub fn display_columns(columns: Vec<Vec<String>>) {
+    for row in columns {
+        let columns = row.join("|");
+        println!("{columns}");
+    }
+}
+
+pub fn traverse_btree_index(
+    file: &mut File,
+    page_size: u16,
+    page_number: usize,
+    // schemas: &mut Vec<Schema>,
+) -> Result<()> {
+    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
+
+    match page.page_header.page_type {
+        PageType::TableLeaf => {
+            for cell in page.table_leaf_cells()? {
+                let schema = cell.sqlite_schema()?;
+            }
+        }
+
+        PageType::TableInterior => {
+            for cell in page.table_interior_cells()? {
+                traverse_btree_index(file, page_size, cell.left_child as usize)?;
+            }
+
+            // traverse_schema_btree(
+            //     file,
+            //     page_size,
+            //     page.page_header.right_page_number.unwrap() as usize,
+            //     table_names,
+            // )?;
+        }
+
+        _ => unreachable!("Invalid page type for sqlite_schema"),
+    }
+
+    Ok(())
+}
+
+pub fn get_index_page(schemas: &[Schema], table: &str) -> Result<Option<u32>> {
+    let index_schemas: Vec<Schema> = schemas
+        .iter()
+        .filter(|schema| schema.schema_type == "index")
+        .cloned()
+        .collect();
+
+    // println!("{:?}", index_schemas);
+
+    let table_index = index_schemas
+        .iter()
+        .find(|schema| schema.table_name == table);
+
+    match table_index {
+        Some(schema) => {
+            let root_page_num = schema.root_page;
+            Ok(Some(root_page_num as u32))
+        }
+        None => Ok(None),
+    }
 }
