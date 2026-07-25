@@ -138,37 +138,6 @@ impl BTreePage {
         Ok(position)
     }
 
-    pub fn table_names(
-        &self,
-        file: &mut File,
-        page_size: u16,
-        page_number: usize,
-    ) -> Result<Vec<String>> {
-        let mut table_names = Vec::new();
-
-        traverse_schema_btree(file, page_size, page_number, &mut table_names)?;
-
-        // for cell in self.table_leaf_cells()? {
-        //     let schema = cell.sqlite_schema()?;
-        //     table_names.push(schema.table_name);
-        // }
-
-        Ok(table_names)
-    }
-
-    pub fn find_table_page(&self, table: &str) -> Result<usize> {
-        let cells = self.table_leaf_cells()?;
-
-        cells
-            .into_iter()
-            .find(|cell| {
-                cell.sqlite_schema()
-                    .is_ok_and(|schema| schema.table_name == table)
-            })
-            .map(|cell| cell.sqlite_schema().unwrap().root_page)
-            .ok_or_else(|| anyhow!("Table `{}` not found", table))
-    }
-
     pub fn find_column(&self, table: &str, column: &str) -> Result<Schema> {
         for cell in self.table_leaf_cells()? {
             let schema = cell.sqlite_schema()?;
@@ -386,7 +355,7 @@ pub fn traverse_schema_btree(
     file: &mut File,
     page_size: u16,
     page_number: usize,
-    table_names: &mut Vec<String>,
+    schemas: &mut Vec<Schema>,
 ) -> Result<()> {
     let page = BTreePage::build_page(file, page_size as usize, page_number)?;
 
@@ -395,13 +364,13 @@ pub fn traverse_schema_btree(
             for cell in page.table_leaf_cells()? {
                 let schema = cell.sqlite_schema()?;
 
-                table_names.push(schema.table_name);
+                schemas.push(schema);
             }
         }
 
         PageType::TableInterior => {
             for cell in page.table_interior_cells()? {
-                traverse_schema_btree(file, page_size, cell.left_child as usize, table_names)?;
+                traverse_schema_btree(file, page_size, cell.left_child as usize, schemas)?;
             }
 
             // traverse_schema_btree(
@@ -418,30 +387,76 @@ pub fn traverse_schema_btree(
     Ok(())
 }
 
-pub fn table_names(file: &mut File, page_size: u16, page: BTreePage) -> Result<Vec<String>> {
-    let mut table_names = Vec::new();
+pub fn schemas(file: &mut File, page_size: u16, page: &BTreePage) -> Result<Vec<Schema>> {
+    let mut schemas = Vec::new();
 
     match page.page_header.page_type {
         PageType::TableInterior => {
             let cells = page.table_interior_cells()?;
             for cell in cells {
-                traverse_schema_btree(file, page_size, cell.left_child as usize, &mut table_names)?;
+                traverse_schema_btree(file, page_size, cell.left_child as usize, &mut schemas)?;
             }
         }
         PageType::TableLeaf => {
             for cell in page.table_leaf_cells()? {
                 let schema = cell.sqlite_schema()?;
 
-                table_names.push(schema.table_name);
+                schemas.push(schema);
             }
         }
         _ => unreachable!("Invalid page type for sqlite_schema"),
     }
 
-    // for cell in self.table_leaf_cells()? {
-    //     let schema = cell.sqlite_schema()?;
-    //     table_names.push(schema.table_name);
-    // }
+    Ok(schemas)
+}
 
-    Ok(table_names)
+pub fn get_table_names(schemas: Vec<Schema>) -> Vec<String> {
+    schemas
+        .iter()
+        .map(|schema| schema.table_name.clone())
+        .collect()
+}
+
+pub fn find_table_page(schemas: &[Schema], table: &str) -> Result<usize> {
+    let schema = schemas
+        .iter()
+        .find(|schema| schema.table_name == table)
+        .unwrap();
+
+    Ok(schema.root_page)
+}
+
+pub fn find_column(schemas: &[Schema], table: &str, column: &str) -> Result<Schema> {
+    let schema = schemas.iter().find(|schema| {
+        schema
+            .sql
+            .to_lowercase()
+            .as_str()
+            .contains(column.to_lowercase().as_str())
+            && schema.table_name == table
+    });
+
+    match schema {
+        Some(schema) => Ok(schema.clone()),
+        None => bail!("Column not found"),
+    }
+}
+
+pub fn column_index(schemas: &[Schema], column: &str, table_name: &str) -> Result<usize> {
+    let schema = find_column(schemas, table_name, column)?;
+    println!("{:?}", schema.sql);
+    let position = schema.column_position(column)?;
+
+    Ok(position)
+}
+
+pub fn indicies_of_columns(
+    schemas: &[Schema],
+    columns: Vec<String>,
+    table_name: String,
+) -> Result<Vec<usize>> {
+    columns
+        .into_iter()
+        .map(|column| column_index(schemas, &column, &table_name))
+        .collect()
 }

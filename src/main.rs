@@ -1,8 +1,10 @@
 use crate::page::cell::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
-use codecrafters_sqlite::page::btree::{table_names, traverse_b_tree, traverse_schema_btree};
-use codecrafters_sqlite::page::{self, btree, cell};
+use codecrafters_sqlite::page::btree::{
+    find_table_page, get_table_names, indicies_of_columns, schemas,
+};
+use codecrafters_sqlite::page::{self, btree};
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -16,6 +18,8 @@ fn main() -> Result<()> {
     let command = &args[2];
     let mut file = File::open(&args[1])?;
     let root_page = page::btree::BTreePage::build_root_page(&mut file)?;
+    let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
+    let schemas = schemas(&mut file, page_size, &root_page)?;
 
     match command.as_str() {
         ".dbinfo" => {
@@ -27,8 +31,7 @@ fn main() -> Result<()> {
         }
         ".tables" => {
             // Lists all table names in database
-            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
-            let table_names = table_names(&mut file, page_size, root_page)?;
+            let table_names = get_table_names(schemas);
 
             // let table_names = table_names(&mut file, page_size, 0)?;
             page::btree::display_string_vector(table_names)?;
@@ -39,8 +42,7 @@ fn main() -> Result<()> {
 
             let mut split_command = command::split_command(cmd);
             let table_name = split_command.remove(split_command.len() - 1);
-            let page_number = root_page.find_table_page(&table_name)?;
-            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
+            let page_number = find_table_page(schemas.as_slice(), &table_name)?;
 
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
@@ -59,8 +61,7 @@ fn main() -> Result<()> {
             let (where_column, where_column_value) = command::parse_command_where(&split_command)?;
 
             // Search root page cells for specific table, returning row id of table
-            let page_number = root_page.find_table_page(&table_name)? as usize;
-            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
+            let page_number = find_table_page(schemas.as_slice(), &table_name)? as usize;
 
             // Get column index of each specified column
             let column_index = root_page.column_index(&where_column, &table_name)?;
@@ -126,12 +127,11 @@ fn main() -> Result<()> {
             let columns = command::parse_command_columns(&split_command);
 
             // Search root page cells for specific table, returning row id of table
-            let page_number = root_page.find_table_page(&table_name)? as usize;
-            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
-
-            // // Get column index of each specified column
-            let column_indices = root_page.indicies_of_columns(columns, table_name)?;
-
+            let page_number = find_table_page(schemas.as_slice(), &table_name)? as usize;
+            //
+            // // // Get column index of each specified column
+            let column_indices = indicies_of_columns(schemas.as_slice(), columns, table_name)?;
+            //
             let mut rows = Vec::new();
             page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
 
