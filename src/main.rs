@@ -22,9 +22,9 @@ fn main() -> Result<()> {
     let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
     let schemas = schemas(&mut file, page_size, &root_page)?;
 
-    // for schema in &schemas {
-    //     println!("\n{:?}", schema.schema_type);
-    // }
+    for schema in &schemas {
+        println!("\n{:?}", schema);
+    }
 
     match command.as_str() {
         ".dbinfo" => {

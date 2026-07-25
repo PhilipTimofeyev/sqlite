@@ -427,7 +427,13 @@ pub fn schemas(file: &mut File, page_size: u16, page: &BTreePage) -> Result<Vec<
 pub fn get_table_names(schemas: Vec<Schema>) -> Vec<String> {
     schemas
         .iter()
-        .map(|schema| schema.table_name.clone())
+        .filter_map(|schema| {
+            if schema.schema_type == "table" {
+                Some(schema.table_name.clone())
+            } else {
+                None
+            }
+        })
         .collect()
 }
 
