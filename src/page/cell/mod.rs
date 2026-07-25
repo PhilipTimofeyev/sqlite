@@ -64,38 +64,44 @@ pub fn build_serial_values(payload: &[u8]) -> Result<Vec<SerialValue>> {
     let mut serial_values = Vec::new();
 
     for serial_type in &serial_types {
-        match serial_type {
-            SerialType::Integer(bytes) => {
-                let mut buf = vec![0; *bytes];
-                cursor.read_exact(&mut buf)?;
-                let mut value = 0u64;
+        let serial_value = match serial_type {
+            SerialType::Integer(n) => {
+                let bytes = read_n_bytes(&mut cursor, n)?;
+                let mut integer = 0u64;
 
-                for byte in buf {
-                    value = (value << 8) | byte as u64;
+                for byte in bytes {
+                    integer = (integer << 8) | byte as u64;
                 }
-
-                serial_values.push(SerialValue::Integer(value));
+                SerialValue::Integer(integer)
             }
-            SerialType::IntegerConstant(i) => serial_values.push(SerialValue::Integer(*i)),
-            SerialType::Text(bytes) => {
-                let mut buf = vec![0; *bytes];
-                cursor.read_exact(&mut buf)?;
-                let value = String::from_utf8(buf.clone()).unwrap();
-                serial_values.push(SerialValue::Text(value));
+            SerialType::IntegerConstant(i) => SerialValue::Integer(*i),
+            SerialType::Float(n) => {
+                let bytes = read_n_bytes(&mut cursor, n)?;
+                let array: [u8; 8] = bytes.try_into().expect("Float must have 8 bytes");
+                let float = f64::from_be_bytes(array);
+                SerialValue::Float(float)
             }
-            SerialType::Blob(bytes) => {
-                let mut buf = vec![0; *bytes];
-                cursor.read_exact(&mut buf)?;
-                serial_values.push(SerialValue::Blob(buf));
+            SerialType::Text(n) => {
+                let bytes = read_n_bytes(&mut cursor, n)?;
+                let text = String::from_utf8(bytes)?;
+                SerialValue::Text(text)
             }
-            SerialType::Null => {
-                serial_values.push(SerialValue::Null);
+            SerialType::Blob(n) => {
+                let blob = read_n_bytes(&mut cursor, n)?;
+                SerialValue::Blob(blob)
             }
-            _ => todo!(),
-        }
+            SerialType::Null => SerialValue::Null,
+        };
+        serial_values.push(serial_value);
     }
 
     Ok(serial_values)
+}
+
+fn read_n_bytes(data: &mut Cursor<&[u8]>, n: &usize) -> Result<Vec<u8>> {
+    let mut buf = vec![0; *n];
+    data.read_exact(&mut buf)?;
+    Ok(buf)
 }
 
 pub fn parse_varint(data: &[u8]) -> Result<(u64, &[u8])> {
