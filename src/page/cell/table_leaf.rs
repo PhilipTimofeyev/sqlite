@@ -79,6 +79,7 @@ impl TableLeafCell {
 
         let sql = match schema_vec.remove(0) {
             SerialValue::Text(value) => value,
+            SerialValue::Null => "Null".to_owned(),
             _ => return Err(anyhow!("Expected TEXT for SQL")),
         };
 

@@ -138,13 +138,20 @@ impl BTreePage {
         Ok(position)
     }
 
-    pub fn table_names(&self) -> Result<Vec<String>> {
+    pub fn table_names(
+        &self,
+        file: &mut File,
+        page_size: u16,
+        page_number: usize,
+    ) -> Result<Vec<String>> {
         let mut table_names = Vec::new();
 
-        for cell in self.table_leaf_cells()? {
-            let schema = cell.sqlite_schema()?;
-            table_names.push(schema.table_name);
-        }
+        traverse_schema_btree(file, page_size, page_number, &mut table_names)?;
+
+        // for cell in self.table_leaf_cells()? {
+        //     let schema = cell.sqlite_schema()?;
+        //     table_names.push(schema.table_name);
+        // }
 
         Ok(table_names)
     }
@@ -373,4 +380,68 @@ pub fn traverse_b_tree(
 pub struct Row {
     pub row_id: u64,
     pub values: Vec<SerialValue>,
+}
+
+pub fn traverse_schema_btree(
+    file: &mut File,
+    page_size: u16,
+    page_number: usize,
+    table_names: &mut Vec<String>,
+) -> Result<()> {
+    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
+
+    match page.page_header.page_type {
+        PageType::TableLeaf => {
+            for cell in page.table_leaf_cells()? {
+                let schema = cell.sqlite_schema()?;
+
+                table_names.push(schema.table_name);
+            }
+        }
+
+        PageType::TableInterior => {
+            for cell in page.table_interior_cells()? {
+                traverse_schema_btree(file, page_size, cell.left_child as usize, table_names)?;
+            }
+
+            // traverse_schema_btree(
+            //     file,
+            //     page_size,
+            //     page.page_header.right_page_number.unwrap() as usize,
+            //     table_names,
+            // )?;
+        }
+
+        _ => unreachable!("Invalid page type for sqlite_schema"),
+    }
+
+    Ok(())
+}
+
+pub fn table_names(file: &mut File, page_size: u16, page: BTreePage) -> Result<Vec<String>> {
+    let mut table_names = Vec::new();
+
+    match page.page_header.page_type {
+        PageType::TableInterior => {
+            let cells = page.table_interior_cells()?;
+            for cell in cells {
+                traverse_schema_btree(file, page_size, cell.left_child as usize, &mut table_names)?;
+            }
+        }
+        PageType::TableLeaf => {
+            for cell in page.table_leaf_cells()? {
+                let schema = cell.sqlite_schema()?;
+
+                table_names.push(schema.table_name);
+            }
+        }
+        _ => unreachable!("Invalid page type for sqlite_schema"),
+    }
+
+    // for cell in self.table_leaf_cells()? {
+    //     let schema = cell.sqlite_schema()?;
+    //     table_names.push(schema.table_name);
+    // }
+
+    Ok(table_names)
 }

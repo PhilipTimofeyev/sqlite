@@ -1,7 +1,8 @@
 use crate::page::cell::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
-use codecrafters_sqlite::page::{self, btree};
+use codecrafters_sqlite::page::btree::{table_names, traverse_b_tree, traverse_schema_btree};
+use codecrafters_sqlite::page::{self, btree, cell};
 use std::fs::File;
 
 fn main() -> Result<()> {
@@ -19,7 +20,6 @@ fn main() -> Result<()> {
     match command.as_str() {
         ".dbinfo" => {
             // Lists number of tables and page size
-
             let page_size = u16::from_be_bytes(root_page.file_header.unwrap().page_size);
 
             print!("number of tables: {}", root_page.page_header.cell_count);
@@ -27,8 +27,10 @@ fn main() -> Result<()> {
         }
         ".tables" => {
             // Lists all table names in database
+            let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
+            let table_names = table_names(&mut file, page_size, root_page)?;
 
-            let table_names = root_page.table_names()?;
+            // let table_names = table_names(&mut file, page_size, 0)?;
             page::btree::display_string_vector(table_names)?;
         }
         cmd if cmd.to_lowercase().contains("select count(*)") => {
