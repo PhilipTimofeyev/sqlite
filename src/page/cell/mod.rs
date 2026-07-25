@@ -37,7 +37,7 @@ impl SerialType {
     }
 }
 
-pub fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
+pub fn parse_varint(data: &[u8]) -> Result<(u64, &[u8])> {
     for i in 0..9 {
         let Some(b) = data.get(i) else {
             panic!("Not enough bytes for varint");
@@ -48,7 +48,7 @@ pub fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
             for b in data[..=i].iter() {
                 value = (value << 7) | (b & 0x7f) as u64;
             }
-            return Some((value, &data[i + 1..]));
+            return Ok((value, &data[i + 1..]));
         }
     }
 
@@ -56,18 +56,19 @@ pub fn parse_varint(data: &[u8]) -> Option<(u64, &[u8])> {
     panic!("Too many bytes for varint");
 }
 
-fn parse_header_varints(mut data: &[u8]) -> Vec<u64> {
+fn parse_header_varints(mut data: &[u8]) -> Result<Vec<u64>> {
     let mut result = Vec::new();
     while !data.is_empty() {
-        if let Some((value, consumed)) = parse_varint(data) {
-            result.push(value);
-            data = consumed;
-        } else {
-            break;
+        match parse_varint(data) {
+            Ok((value, consumed)) => {
+                result.push(value);
+                data = consumed;
+            }
+            Err(_) => break,
         }
     }
 
-    result
+    Ok(result)
 }
 
 #[allow(dead_code)]
@@ -100,5 +101,59 @@ impl Schema {
             .unwrap();
 
         Ok(column)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Imports everything from the outer module
+
+    #[test]
+    fn test_varint_0() {
+        let varint = vec![0x00];
+        let (result, _) = parse_varint(&varint).unwrap();
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_varint_1() {
+        let varint = vec![0x01];
+        let (result, _) = parse_varint(&varint).unwrap();
+        assert_eq!(result, 1);
+    }
+
+    #[test]
+    fn test_varint_127() {
+        let varint = vec![0x7F];
+        let (result, _) = parse_varint(&varint).unwrap();
+        assert_eq!(result, 127);
+    }
+
+    #[test]
+    fn test_varint_two_bytes() {
+        let varint = vec![0x81, 0x00];
+        let (result, _) = parse_varint(&varint).unwrap();
+        assert_eq!(result, 128);
+    }
+
+    #[test]
+    fn test_varint_three_bytes() {
+        let varint = vec![0x81, 0x80, 0x00];
+        let (result, _) = parse_varint(&varint).unwrap();
+        assert_eq!(result, 16384);
+    }
+
+    #[test]
+    fn test_varint_four_bytes() {
+        let varint = vec![0x81, 0x80, 0x80, 0x00];
+        let (result, _) = parse_varint(&varint).unwrap();
+        assert_eq!(result, 2_097_152);
+    }
+
+    #[test]
+    fn test_varint_nine_bytes() {
+        let varint = vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F];
+        let (result, _) = parse_varint(&varint).unwrap();
+        assert_eq!(result, 9_223_372_036_854_775_807);
     }
 }
