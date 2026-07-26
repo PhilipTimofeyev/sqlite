@@ -47,6 +47,22 @@ fn main() -> Result<()> {
 
             println!("{}", rows.len())
         }
+        cmd if cmd.to_lowercase().contains("select *") => {
+            // Displays all rows from a table
+            let split_command = command::split_command(cmd);
+            let table_name = command::parse_command_table_name(&split_command)?;
+
+            // Search root page cells for specific table, returning row id of table
+            let page_number = btree::find_table_page(schemas.as_slice(), &table_name)? as usize;
+
+            let mut rows = Vec::new();
+            btree::full_table_scan(&mut file, page_size, page_number, &mut rows)?;
+
+            let rows = btree::read_rows(rows);
+            btree::display_columns(rows);
+
+            // btree::display_columns(rows)
+        }
         cmd if cmd.to_lowercase().contains("where") => {
             // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
             // Everything between SELECT and FROM are the columns, retaining order

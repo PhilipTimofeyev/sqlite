@@ -459,6 +459,26 @@ pub fn read_columns(rows: Vec<Row>, column_indices: &[usize]) -> Vec<Vec<String>
     column_values
 }
 
+pub fn read_rows(rows: Vec<Row>) -> Vec<Vec<String>> {
+    let mut column_values = Vec::new();
+    for row in rows {
+        let mut row_cols = Vec::new();
+        let mut column_idx = 0;
+        while let Some(serial_value) = &row.values.get(column_idx) {
+            match serial_value {
+                SerialValue::Text(value) => row_cols.push(value.clone()),
+                SerialValue::Null => (),
+                _ => todo!(),
+            };
+
+            column_idx += 1;
+        }
+        column_values.push(row_cols);
+    }
+
+    column_values
+}
+
 pub fn display_columns(columns: Vec<Vec<String>>) {
     for row in columns {
         let columns = row.join("|");
