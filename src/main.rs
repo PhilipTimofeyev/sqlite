@@ -2,7 +2,7 @@ use crate::page::cell::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::btree::{
-    column_index, display_columns, find_table_page, get_index_page, get_table_names, indexes,
+    column_index, display_columns, find_table_page, get_index_page, get_table_names,
     indicies_of_columns, read_columns, schemas,
 };
 use codecrafters_sqlite::page::{self};
@@ -21,12 +21,6 @@ fn main() -> Result<()> {
     let root_page = page::btree::BTreePage::build_root_page(&mut file)?;
     let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
     let schemas = schemas(&mut file, page_size, &root_page)?;
-
-    indexes(&schemas);
-
-    // for schema in &schemas {
-    //     println!("\n{:?}", schema);
-    // }
 
     match command.as_str() {
         ".dbinfo" => {
@@ -52,7 +46,7 @@ fn main() -> Result<()> {
             let page_number = find_table_page(schemas.as_slice(), &table_name)?;
 
             let mut rows = Vec::new();
-            page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
+            page::btree::full_table_scan(&mut file, page_size, page_number, &mut rows)?;
 
             println!("{}", rows.len())
         }
@@ -81,7 +75,7 @@ fn main() -> Result<()> {
             match index_page {
                 Some(index_page) => {
                     let mut row_ids = Vec::new();
-                    page::btree::get_row_ids(
+                    page::btree::search_index(
                         &mut file,
                         page_size,
                         index_page as usize,
@@ -106,7 +100,7 @@ fn main() -> Result<()> {
                 }
                 None => {
                     let mut rows = Vec::new();
-                    page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
+                    page::btree::full_table_scan(&mut file, page_size, page_number, &mut rows)?;
 
                     let mut filtered_rows = Vec::new();
                     for row in rows {
@@ -144,7 +138,7 @@ fn main() -> Result<()> {
             let column_indices = indicies_of_columns(schemas.as_slice(), columns, &table_name)?;
             //
             let mut rows = Vec::new();
-            page::btree::traverse_b_tree(&mut file, page_size, page_number, &mut rows)?;
+            page::btree::full_table_scan(&mut file, page_size, page_number, &mut rows)?;
 
             let columns = read_columns(rows, column_indices);
             display_columns(columns);
