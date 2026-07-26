@@ -26,8 +26,8 @@ fn main() -> Result<()> {
             // Lists number of tables and page size
             let page_size = u16::from_be_bytes(root_page.file_header.unwrap().page_size);
 
-            print!("number of tables: {}", root_page.page_header.cell_count);
-            println!("database page size: {page_size}");
+            println!("number of tables: {}", root_page.page_header.cell_count);
+            print!("database page size: {page_size}");
         }
         ".tables" => {
             // Lists all table names in database
