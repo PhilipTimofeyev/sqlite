@@ -23,9 +23,6 @@ fn main() -> Result<()> {
 
     match command.as_str() {
         ".dbinfo" => {
-            // Lists number of tables and page size
-            let page_size = u16::from_be_bytes(root_page.file_header.unwrap().page_size);
-
             println!("number of tables: {}", root_page.page_header.cell_count);
             println!("database page size: {page_size}");
         }
@@ -42,8 +39,13 @@ fn main() -> Result<()> {
             let table_name = split_command.remove(split_command.len() - 1);
             let page_number = btree::find_table_page(schemas.as_slice(), &table_name)?;
 
+            let mut page_location = btree::PageLocation {
+                page_size,
+                page_number,
+            };
+
             let mut rows = Vec::new();
-            page::btree::full_table_scan(&mut file, page_size, page_number, &mut rows)?;
+            page::btree::full_table_scan(&mut file, &mut page_location, &mut rows)?;
 
             println!("{}", rows.len())
         }
@@ -55,13 +57,16 @@ fn main() -> Result<()> {
             // Search root page cells for specific table, returning row id of table
             let page_number = btree::find_table_page(schemas.as_slice(), &table_name)? as usize;
 
+            let mut page_location = btree::PageLocation {
+                page_size,
+                page_number,
+            };
+
             let mut rows = Vec::new();
-            btree::full_table_scan(&mut file, page_size, page_number, &mut rows)?;
+            page::btree::full_table_scan(&mut file, &mut page_location, &mut rows)?;
 
             let rows = btree::read_rows(rows);
             btree::display_columns(rows);
-
-            // btree::display_columns(rows)
         }
         cmd if cmd.to_lowercase().contains("where") => {
             // Example command: "SELECT name, color FROM apples WHERE color = 'Yellow'"
@@ -77,6 +82,11 @@ fn main() -> Result<()> {
             // Search root page cells for specific table, returning row id of table
             let page_number = btree::find_table_page(schemas.as_slice(), &table_name)? as usize;
 
+            let mut page_location = btree::PageLocation {
+                page_size,
+                page_number,
+            };
+
             // Get column index of each specified column
             let column_index = btree::column_index(&schemas, &where_column, &table_name)?;
             let column_indices =
@@ -84,15 +94,16 @@ fn main() -> Result<()> {
 
             let index_page = btree::get_index_page(&schemas, &table_name, &where_column)?;
 
-            where_command_search(
-                index_page,
-                column_indices.as_slice(),
+            let rows = where_command_search(
                 &mut file,
-                page_size,
-                page_number,
+                &mut page_location,
+                index_page,
                 &where_column_value,
                 column_index,
             )?;
+
+            let columns = btree::read_columns(&rows, &column_indices);
+            btree::display_columns(columns);
         }
         cmd if cmd.to_lowercase().contains("select") => {
             // Example command: "SELECT name, color FROM oranges"
@@ -105,15 +116,20 @@ fn main() -> Result<()> {
 
             // Search root page cells for specific table, returning row id of table
             let page_number = btree::find_table_page(schemas.as_slice(), &table_name)? as usize;
-            //
-            // // // Get column index of each specified column
+
+            let mut page_location = btree::PageLocation {
+                page_size,
+                page_number,
+            };
+
+            // Get column index of each specified column
             let column_indices =
                 btree::indicies_of_columns(schemas.as_slice(), columns, &table_name)?;
             //
             let mut rows = Vec::new();
-            page::btree::full_table_scan(&mut file, page_size, page_number, &mut rows)?;
+            page::btree::full_table_scan(&mut file, &mut page_location, &mut rows)?;
 
-            let columns = btree::read_columns(rows, column_indices.as_slice());
+            let columns = btree::read_columns(&rows, column_indices.as_slice());
             btree::display_columns(columns);
         }
         _ => bail!("Missing or invalid command passed: {}", command),
@@ -123,49 +139,39 @@ fn main() -> Result<()> {
 }
 
 fn where_command_search(
-    index_page: Option<u32>,
-    column_indices: &[usize],
     file: &mut File,
-    page_size: u16,
-    page_number: usize,
+    page_location: &mut btree::PageLocation,
+    index_page: Option<u32>,
     where_column_value: &str,
     column_index: usize,
-) -> Result<()> {
+) -> Result<Vec<btree::Row>> {
+    let mut rows = Vec::new();
+
+    // If index page for column exists then search via index
+    // If not then do a full table scan
     match index_page {
         Some(index_page) => {
             //Sorted by index key greatest to least
             let mut row_ids = Vec::new();
-            page::btree::search_index(
-                file,
-                page_size,
-                index_page as usize,
-                &mut row_ids,
-                where_column_value,
-            )?;
+            let table_page_number = page_location.page_number;
+            page_location.page_number = index_page as usize;
 
-            let mut rows = Vec::new();
+            page::btree::search_index(file, page_location, &mut row_ids, where_column_value)?;
+
+            page_location.page_number = table_page_number;
 
             // Sort by index key in order
-            row_ids.reverse();
-            for row_id in row_ids {
-                page::btree::traverse_b_tree_table(
-                    file,
-                    page_size,
-                    page_number,
-                    &mut rows,
-                    row_id,
-                )?;
+            for row_id in row_ids.iter().rev() {
+                page::btree::search_table(file, page_location, &mut rows, *row_id)?;
+                page_location.page_number = table_page_number;
             }
-
-            let columns = btree::read_columns(rows, column_indices);
-            btree::display_columns(columns);
+            Ok(rows)
         }
         None => {
-            let mut rows = Vec::new();
-            page::btree::full_table_scan(file, page_size, page_number, &mut rows)?;
+            page::btree::full_table_scan(file, page_location, &mut rows)?;
 
             let mut filtered_rows = Vec::new();
-            for row in rows {
+            for row in rows.as_slice() {
                 let col_value = match &row.values[column_index] {
                     SerialValue::Text(value) => value.to_string(),
                     SerialValue::Integer(value) => value.to_string(),
@@ -175,14 +181,10 @@ fn where_command_search(
                 };
 
                 if col_value == where_column_value {
-                    filtered_rows.push(row)
+                    filtered_rows.push(row.clone())
                 };
             }
-
-            let columns = btree::read_columns(filtered_rows, column_indices);
-            btree::display_columns(columns);
+            Ok(filtered_rows)
         }
-    };
-
-    Ok(())
+    }
 }

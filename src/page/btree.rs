@@ -125,12 +125,15 @@ pub fn display_string_vector(vector: Vec<String>) -> Result<()> {
 
 pub fn search_index(
     file: &mut File,
-    page_size: u16,
-    page_number: usize,
+    page_location: &mut PageLocation,
     rows: &mut Vec<u64>,
     value: &str,
 ) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
+    let page = BTreePage::build_page(
+        file,
+        page_location.page_size as usize,
+        page_location.page_number,
+    )?;
 
     match page.page_header.page_type {
         PageType::IndexInterior => {
@@ -148,43 +151,33 @@ pub fn search_index(
                     None
                 };
 
+                page_location.page_number = cell.left_child as usize;
+
                 match key {
                     SerialValue::Text(key) => {
                         if value < key.as_str() {
-                            search_index(file, page_size, cell.left_child as usize, rows, value)?;
+                            search_index(file, page_location, rows, value)?;
                         }
 
                         if let Some(row_id) = row_id
                             && value == key.as_str()
                         {
                             rows.push(row_id);
-                            search_index(file, page_size, cell.left_child as usize, rows, value)?
+                            search_index(file, page_location, rows, value)?;
                         };
                     }
                     SerialValue::Integer(key) => {
                         let value: u64 = value.parse()?;
                         let string_value = value.to_string();
                         if value < key {
-                            search_index(
-                                file,
-                                page_size,
-                                cell.left_child as usize,
-                                rows,
-                                &string_value,
-                            )?;
+                            search_index(file, page_location, rows, &string_value)?;
                         }
 
                         if let Some(row_id) = row_id
                             && value == key
                         {
                             rows.push(row_id);
-                            search_index(
-                                file,
-                                page_size,
-                                cell.left_child as usize,
-                                rows,
-                                &string_value,
-                            )?;
+                            search_index(file, page_location, rows, &string_value)?;
                         };
                     }
                     SerialValue::Null => {}
@@ -192,13 +185,9 @@ pub fn search_index(
                 };
             }
 
-            search_index(
-                file,
-                page_size,
-                page.page_header.right_page_number.unwrap() as usize,
-                rows,
-                value,
-            )?;
+            page_location.page_number = page.page_header.right_page_number.unwrap() as usize;
+
+            search_index(file, page_location, rows, value)?;
         }
         PageType::IndexLeaf => {
             for cell in page.index_leaf_cells()? {
@@ -240,14 +229,17 @@ pub fn search_index(
     Ok(())
 }
 
-pub fn traverse_b_tree_table(
+pub fn search_table(
     file: &mut File,
-    page_size: u16,
-    page_number: usize,
+    page_location: &mut PageLocation,
     rows: &mut Vec<Row>,
     row_id: u64,
 ) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
+    let page = BTreePage::build_page(
+        file,
+        page_location.page_size as usize,
+        page_location.page_number,
+    )?;
 
     match page.page_header.page_type {
         PageType::TableInterior => {
@@ -257,16 +249,13 @@ pub fn traverse_b_tree_table(
 
             match cell {
                 Some(cell) => {
-                    traverse_b_tree_table(file, page_size, cell.left_child as usize, rows, row_id)?;
+                    page_location.page_number = cell.left_child as usize;
+                    search_table(file, page_location, rows, row_id)?;
                 }
                 None => {
-                    traverse_b_tree_table(
-                        file,
-                        page_size,
-                        page.page_header.right_page_number.unwrap() as usize,
-                        rows,
-                        row_id,
-                    )?;
+                    page_location.page_number =
+                        page.page_header.right_page_number.unwrap() as usize;
+                    search_table(file, page_location, rows, row_id)?;
                 }
             }
         }
@@ -291,16 +280,20 @@ pub fn traverse_b_tree_table(
 
 pub fn full_table_scan(
     file: &mut File,
-    page_size: u16,
-    page_number: usize,
+    page_location: &mut PageLocation,
     rows: &mut Vec<Row>,
 ) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
+    let page = BTreePage::build_page(
+        file,
+        page_location.page_size as usize,
+        page_location.page_number,
+    )?;
 
     match page.page_header.page_type {
         PageType::TableInterior => {
             for child in page.table_interior_cells()? {
-                full_table_scan(file, page_size, child.left_child as usize, rows)?;
+                page_location.page_number = child.left_child as usize;
+                full_table_scan(file, page_location, rows)?;
             }
         }
 
@@ -316,7 +309,8 @@ pub fn full_table_scan(
         }
         PageType::IndexInterior => {
             for child in page.index_interior_cells()? {
-                full_table_scan(file, page_size, child.left_child as usize, rows)?;
+                page_location.page_number = child.left_child as usize;
+                full_table_scan(file, page_location, rows)?;
             }
         }
         _ => unreachable!("Invalid page type for sqlite_schema"),
@@ -325,7 +319,7 @@ pub fn full_table_scan(
     Ok(())
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Row {
     pub row_id: u64,
     pub values: Vec<SerialValue>,
@@ -439,7 +433,7 @@ pub fn indicies_of_columns(
         .collect()
 }
 
-pub fn read_columns(rows: Vec<Row>, column_indices: &[usize]) -> Vec<Vec<String>> {
+pub fn read_columns(rows: &[Row], column_indices: &[usize]) -> Vec<Vec<String>> {
     let mut column_values = Vec::new();
     for row in rows {
         let mut row_cols = Vec::new();
@@ -517,4 +511,9 @@ pub fn indexes(schemas: &[Schema]) {
             println!("{:?}", schema.name)
         };
     }
+}
+
+pub struct PageLocation {
+    pub page_size: u16,
+    pub page_number: usize,
 }

@@ -2,7 +2,7 @@ pub mod index_interior;
 pub mod index_leaf;
 pub mod table_interior;
 pub mod table_leaf;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::io::{Cursor, Read};
 
 #[allow(dead_code)]
@@ -16,7 +16,7 @@ pub enum SerialType {
     Text(usize),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SerialValue {
     Null,
     Integer(u64),
