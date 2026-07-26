@@ -566,8 +566,8 @@ pub fn get_index_page(schemas: &[Schema], table: &str, column: &str) -> Result<O
 
 pub fn indexes(schemas: &[Schema]) {
     for schema in schemas {
-        if schema.schema_type == "index" {
-            println!("{:?}", schema)
+        if schema.schema_type == "index" && schema.name.contains("idx") {
+            println!("{:?}", schema.name)
         };
     }
 }

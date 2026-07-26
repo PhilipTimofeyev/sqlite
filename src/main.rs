@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
     let schemas = schemas(&mut file, page_size, &root_page)?;
 
-    // indexes(&schemas);
+    indexes(&schemas);
 
     // for schema in &schemas {
     //     println!("\n{:?}", schema);
@@ -112,6 +112,8 @@ fn main() -> Result<()> {
                     for row in rows {
                         let col_value = match &row.values[column_index] {
                             SerialValue::Text(value) => value.to_string(),
+                            SerialValue::Integer(value) => value.to_string(),
+                            SerialValue::Float(value) => value.to_string(),
                             SerialValue::Null => row.row_id.to_string(),
                             _ => todo!(),
                         };
