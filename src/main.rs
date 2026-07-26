@@ -1,8 +1,8 @@
 use crate::page::cell::SerialValue;
-use anyhow::{bail, Result};
-use codecrafters_sqlite::command;
-use codecrafters_sqlite::page::btree;
-use codecrafters_sqlite::page::{self};
+use anyhow::{Result, bail};
+use sqlite::command;
+use sqlite::page::btree;
+use sqlite::page::{self};
 use std::fs::File;
 
 fn main() -> Result<()> {

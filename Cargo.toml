@@ -1,0 +1,11 @@
+[package]
+name = "sqlite"
+version = "0.1.0"
+author = "Philip Timofeyev"
+edition = "2024"
+rust-version = "1.97.1"
+
+[dependencies]
+anyhow = "1.0.68"                               
+bytes = "1.3.0"                                  
+thiserror = "1.0.38"                            
