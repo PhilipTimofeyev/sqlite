@@ -2,7 +2,7 @@ use crate::page::cell::SerialValue;
 use anyhow::{bail, Result};
 use codecrafters_sqlite::command;
 use codecrafters_sqlite::page::btree::{
-    column_index, display_columns, find_table_page, get_index_page, get_table_names,
+    column_index, display_columns, find_table_page, get_index_page, get_table_names, indexes,
     indicies_of_columns, read_columns, schemas,
 };
 use codecrafters_sqlite::page::{self};
@@ -22,9 +22,11 @@ fn main() -> Result<()> {
     let page_size = u16::from_be_bytes(root_page.file_header.as_ref().unwrap().page_size);
     let schemas = schemas(&mut file, page_size, &root_page)?;
 
-    for schema in &schemas {
-        println!("\n{:?}", schema);
-    }
+    // indexes(&schemas);
+
+    // for schema in &schemas {
+    //     println!("\n{:?}", schema);
+    // }
 
     match command.as_str() {
         ".dbinfo" => {
@@ -72,7 +74,7 @@ fn main() -> Result<()> {
             let column_index = column_index(&schemas, &where_column, &table_name)?;
             let column_indices = indicies_of_columns(schemas.as_slice(), columns, &table_name)?;
 
-            let index_page = get_index_page(&schemas, &table_name)?;
+            let index_page = get_index_page(&schemas, &table_name, &where_column)?;
 
             // let index_page = root_page.get_index_page()?;
 

@@ -191,7 +191,8 @@ pub fn get_row_ids(
     rows: &mut Vec<u64>,
     value: &str,
 ) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
+    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
+    // println!("{:?}", value);
 
     match page.page_header.page_type {
         PageType::IndexInterior => {
@@ -200,13 +201,7 @@ pub fn get_row_ids(
             for cell in &cells {
                 let mut info = build_serial_values(&cell.payload)?;
 
-                let text = info.remove(0);
-                let key = if let SerialValue::Text(key) = text {
-                    Some(key)
-                } else {
-                    None
-                };
-
+                let key = info.remove(0);
                 let row_id = info.remove(0);
 
                 let row_id = if let SerialValue::Integer(row_id) = row_id {
@@ -215,22 +210,51 @@ pub fn get_row_ids(
                     None
                 };
 
-                if let Some(key) = key {
-                    if value < key.as_str() {
-                        get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
-                    }
-
-                    if let Some(row_id) = row_id {
-                        if value == key {
-                            rows.push(row_id);
+                match key {
+                    SerialValue::Text(key) => {
+                        if value < key.as_str() {
                             get_row_ids(file, page_size, cell.left_child as usize, rows, value)?;
                         }
+
+                        if let Some(row_id) = row_id {
+                            if value == key.as_str() {
+                                rows.push(row_id);
+                                get_row_ids(file, page_size, cell.left_child as usize, rows, value)?
+                            }
+                        };
                     }
-                }
+                    SerialValue::Integer(key) => {
+                        let value: u64 = value.parse().unwrap();
+                        let string_value = value.to_string();
+                        if value < key {
+                            get_row_ids(
+                                file,
+                                page_size,
+                                cell.left_child as usize,
+                                rows,
+                                &string_value,
+                            )?;
+                        }
+
+                        if let Some(row_id) = row_id {
+                            if value == key {
+                                rows.push(row_id);
+                                get_row_ids(
+                                    file,
+                                    page_size,
+                                    cell.left_child as usize,
+                                    rows,
+                                    &string_value,
+                                )?;
+                            }
+                        };
+                    }
+
+                    SerialValue::Null => {}
+                    _ => {}
+                };
             }
 
-            // Target is greater than all separators,
-            // or equal to the last separator.
             get_row_ids(
                 file,
                 page_size,
@@ -242,12 +266,7 @@ pub fn get_row_ids(
         PageType::IndexLeaf => {
             for cell in page.index_leaf_cells()? {
                 let mut info = build_serial_values(&cell.payload)?;
-                let text = info.remove(0);
-                let key = if let SerialValue::Text(key) = text {
-                    Some(key)
-                } else {
-                    None
-                };
+                let key = info.remove(0);
 
                 let row_id = info.remove(0);
 
@@ -257,12 +276,23 @@ pub fn get_row_ids(
                     None
                 };
 
-                if let Some(key) = key {
-                    if let Some(row_id) = row_id {
-                        if key == value {
-                            rows.push(row_id);
+                match key {
+                    SerialValue::Text(key) => {
+                        if value == key.as_str() {
+                            if let Some(row_id) = row_id {
+                                rows.push(row_id);
+                            };
                         }
                     }
+                    SerialValue::Integer(key) => {
+                        let value: u64 = value.parse().unwrap();
+                        if value == key {
+                            if let Some(row_id) = row_id {
+                                rows.push(row_id);
+                            };
+                        }
+                    }
+                    _ => todo!(),
                 }
 
                 // println!("{:?}. {}", key, row_id);
@@ -353,7 +383,7 @@ pub fn traverse_b_tree(
                 traverse_b_tree(file, page_size, child.left_child as usize, rows)?;
             }
         }
-        PageType::IndexLeaf => {}
+        _ => unreachable!("Invalid page type for sqlite_schema"),
     }
 
     Ok(())
@@ -507,41 +537,7 @@ pub fn display_columns(columns: Vec<Vec<String>>) {
     }
 }
 
-pub fn traverse_btree_index(
-    file: &mut File,
-    page_size: u16,
-    page_number: usize,
-    // schemas: &mut Vec<Schema>,
-) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
-
-    match page.page_header.page_type {
-        PageType::TableLeaf => {
-            for cell in page.table_leaf_cells()? {
-                let schema = cell.sqlite_schema()?;
-            }
-        }
-
-        PageType::TableInterior => {
-            for cell in page.table_interior_cells()? {
-                traverse_btree_index(file, page_size, cell.left_child as usize)?;
-            }
-
-            // traverse_schema_btree(
-            //     file,
-            //     page_size,
-            //     page.page_header.right_page_number.unwrap() as usize,
-            //     table_names,
-            // )?;
-        }
-
-        _ => unreachable!("Invalid page type for sqlite_schema"),
-    }
-
-    Ok(())
-}
-
-pub fn get_index_page(schemas: &[Schema], table: &str) -> Result<Option<u32>> {
+pub fn get_index_page(schemas: &[Schema], table: &str, column: &str) -> Result<Option<u32>> {
     let index_schemas: Vec<Schema> = schemas
         .iter()
         .filter(|schema| schema.schema_type == "index")
@@ -550,9 +546,14 @@ pub fn get_index_page(schemas: &[Schema], table: &str) -> Result<Option<u32>> {
 
     // println!("{:?}", index_schemas);
 
-    let table_index = index_schemas
-        .iter()
-        .find(|schema| schema.table_name == table);
+    let table_index = index_schemas.iter().find(|schema| {
+        schema.table_name == table
+            && schema
+                .sql
+                .to_lowercase()
+                .as_str()
+                .contains(column.to_lowercase().as_str())
+    });
 
     match table_index {
         Some(schema) => {
@@ -560,5 +561,13 @@ pub fn get_index_page(schemas: &[Schema], table: &str) -> Result<Option<u32>> {
             Ok(Some(root_page_num as u32))
         }
         None => Ok(None),
+    }
+}
+
+pub fn indexes(schemas: &[Schema]) {
+    for schema in schemas {
+        if schema.schema_type == "index" {
+            println!("{:?}", schema)
+        };
     }
 }
