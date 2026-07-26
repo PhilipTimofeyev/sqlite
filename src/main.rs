@@ -27,13 +27,11 @@ fn main() -> Result<()> {
             let page_size = u16::from_be_bytes(root_page.file_header.unwrap().page_size);
 
             println!("number of tables: {}", root_page.page_header.cell_count);
-            print!("database page size: {page_size}");
+            println!("database page size: {page_size}");
         }
         ".tables" => {
-            // Lists all table names in database
+            // Lists all table names in database, including sqlite_sequence table
             let table_names = btree::get_table_names(schemas);
-
-            // let table_names = table_names(&mut file, page_size, 0)?;
             page::btree::display_string_vector(table_names)?;
         }
         cmd if cmd.to_lowercase().contains("select count(*)") => {
@@ -119,6 +117,7 @@ fn where_command_search(
 ) -> Result<()> {
     match index_page {
         Some(index_page) => {
+            //Sorted by index key greatest to least
             let mut row_ids = Vec::new();
             page::btree::search_index(
                 file,
@@ -130,6 +129,8 @@ fn where_command_search(
 
             let mut rows = Vec::new();
 
+            // Sort by index key in order
+            row_ids.reverse();
             for row_id in row_ids {
                 page::btree::traverse_b_tree_table(
                     file,

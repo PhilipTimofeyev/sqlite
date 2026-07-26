@@ -4,8 +4,8 @@ use crate::page::cell::index_interior::IndexInteriorCell;
 use crate::page::cell::index_leaf::IndexLeafCell;
 use crate::page::cell::table_interior::TableInteriorCell;
 use crate::page::cell::table_leaf::TableLeafCell;
-use crate::page::cell::{build_serial_values, Schema, SerialValue};
-use anyhow::{bail, Result};
+use crate::page::cell::{Schema, SerialValue, build_serial_values};
+use anyhow::{Result, bail};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
