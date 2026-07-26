@@ -154,17 +154,11 @@ pub fn search_index(
                             search_index(file, page_size, cell.left_child as usize, rows, value)?;
                         }
 
-                        if let Some(row_id) = row_id {
-                            if value == key.as_str() {
-                                rows.push(row_id);
-                                search_index(
-                                    file,
-                                    page_size,
-                                    cell.left_child as usize,
-                                    rows,
-                                    value,
-                                )?
-                            }
+                        if let Some(row_id) = row_id
+                            && value == key.as_str()
+                        {
+                            rows.push(row_id);
+                            search_index(file, page_size, cell.left_child as usize, rows, value)?
                         };
                     }
                     SerialValue::Integer(key) => {
@@ -180,17 +174,17 @@ pub fn search_index(
                             )?;
                         }
 
-                        if let Some(row_id) = row_id {
-                            if value == key {
-                                rows.push(row_id);
-                                search_index(
-                                    file,
-                                    page_size,
-                                    cell.left_child as usize,
-                                    rows,
-                                    &string_value,
-                                )?;
-                            }
+                        if let Some(row_id) = row_id
+                            && value == key
+                        {
+                            rows.push(row_id);
+                            search_index(
+                                file,
+                                page_size,
+                                cell.left_child as usize,
+                                rows,
+                                &string_value,
+                            )?;
                         };
                     }
                     SerialValue::Null => {}
@@ -220,19 +214,19 @@ pub fn search_index(
 
                 match key {
                     SerialValue::Text(key) => {
-                        if value == key.as_str() {
-                            if let Some(row_id) = row_id {
-                                rows.push(row_id);
-                            };
-                        }
+                        if let Some(row_id) = row_id
+                            && value == key.as_str()
+                        {
+                            rows.push(row_id);
+                        };
                     }
                     SerialValue::Integer(key) => {
                         let value: u64 = value.parse()?;
-                        if value == key {
-                            if let Some(row_id) = row_id {
-                                rows.push(row_id);
-                            };
-                        }
+                        if let Some(row_id) = row_id
+                            && value == key
+                        {
+                            rows.push(row_id);
+                        };
                     }
                     SerialValue::Null => {}
                     // Need other data types for keys?
