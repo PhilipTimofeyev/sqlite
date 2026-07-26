@@ -321,26 +321,27 @@ pub struct Row {
     pub values: Vec<SerialValue>,
 }
 
-pub fn traverse_schema_btree(
+pub fn build_schemas(
     file: &mut File,
-    page_size: u16,
-    page_number: usize,
+    page_location: &mut PageLocation,
     schemas: &mut Vec<Schema>,
 ) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
-
+    let page = BTreePage::build_page(
+        file,
+        page_location.page_size as usize,
+        page_location.page_number,
+    )?;
     match page.page_header.page_type {
         PageType::TableLeaf => {
             for cell in page.table_leaf_cells()? {
                 let schema = cell.sqlite_schema()?;
-
                 schemas.push(schema);
             }
         }
-
         PageType::TableInterior => {
             for cell in page.table_interior_cells()? {
-                traverse_schema_btree(file, page_size, cell.left_child as usize, schemas)?;
+                page_location.page_number = cell.left_child as usize;
+                build_schemas(file, page_location, schemas)?;
             }
         }
 
@@ -357,7 +358,12 @@ pub fn schemas(file: &mut File, page_size: u16, page: &BTreePage) -> Result<Vec<
         PageType::TableInterior => {
             let cells = page.table_interior_cells()?;
             for cell in cells {
-                traverse_schema_btree(file, page_size, cell.left_child as usize, &mut schemas)?;
+                let mut page_location = PageLocation {
+                    page_number: cell.left_child as usize,
+                    page_size,
+                };
+
+                build_schemas(file, &mut page_location, &mut schemas)?;
             }
         }
         PageType::TableLeaf => {
