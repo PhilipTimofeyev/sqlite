@@ -12,7 +12,7 @@ impl TryFrom<&[u8]> for TableInteriorCell {
 
     fn try_from(bytes: &[u8]) -> Result<Self> {
         let left_child: u32 = u32::from_be_bytes(bytes[0..4].try_into()?);
-        let (row_id, _data) = parse_varint(&bytes[4..]).unwrap();
+        let (row_id, _data) = parse_varint(&bytes[4..])?;
 
         Ok(TableInteriorCell { left_child, row_id })
     }

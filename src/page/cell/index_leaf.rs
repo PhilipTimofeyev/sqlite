@@ -16,7 +16,7 @@ impl TryFrom<&[u8]> for IndexLeafCell {
 
     fn try_from(bytes: &[u8]) -> Result<Self> {
         let mut cursor = Cursor::new(bytes);
-        let (payload_size, data) = parse_varint(bytes).unwrap();
+        let (payload_size, data) = parse_varint(bytes)?;
         let payload = &data[0..payload_size as usize];
 
         cursor.set_position(payload_size);

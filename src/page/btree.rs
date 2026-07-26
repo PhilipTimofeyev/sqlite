@@ -253,7 +253,7 @@ pub fn traverse_b_tree_table(
     rows: &mut Vec<Row>,
     row_id: u64,
 ) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
+    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
 
     match page.page_header.page_type {
         PageType::TableInterior => {
@@ -278,7 +278,7 @@ pub fn traverse_b_tree_table(
         }
 
         PageType::TableLeaf => {
-            for cell in page.table_leaf_cells().unwrap() {
+            for cell in page.table_leaf_cells()? {
                 if row_id == cell.row_id {
                     let values = build_serial_values(&cell.payload)?;
                     let row = Row {
@@ -301,17 +301,17 @@ pub fn full_table_scan(
     page_number: usize,
     rows: &mut Vec<Row>,
 ) -> Result<()> {
-    let page = BTreePage::build_page(file, page_size as usize, page_number).unwrap();
+    let page = BTreePage::build_page(file, page_size as usize, page_number)?;
 
     match page.page_header.page_type {
         PageType::TableInterior => {
-            for child in page.table_interior_cells().unwrap() {
+            for child in page.table_interior_cells()? {
                 full_table_scan(file, page_size, child.left_child as usize, rows)?;
             }
         }
 
         PageType::TableLeaf => {
-            for cell in page.table_leaf_cells().unwrap() {
+            for cell in page.table_leaf_cells()? {
                 let values = build_serial_values(&cell.payload)?;
                 let row = Row {
                     row_id: cell.row_id,
@@ -321,7 +321,7 @@ pub fn full_table_scan(
             }
         }
         PageType::IndexInterior => {
-            for child in page.index_interior_cells().unwrap() {
+            for child in page.index_interior_cells()? {
                 full_table_scan(file, page_size, child.left_child as usize, rows)?;
             }
         }
@@ -358,13 +358,6 @@ pub fn traverse_schema_btree(
             for cell in page.table_interior_cells()? {
                 traverse_schema_btree(file, page_size, cell.left_child as usize, schemas)?;
             }
-
-            // traverse_schema_btree(
-            //     file,
-            //     page_size,
-            //     page.page_header.right_page_number.unwrap() as usize,
-            //     table_names,
-            // )?;
         }
 
         _ => unreachable!("Invalid page type for sqlite_schema"),
@@ -452,14 +445,14 @@ pub fn indicies_of_columns(
         .collect()
 }
 
-pub fn read_columns(rows: Vec<Row>, column_indices: Vec<usize>) -> Vec<Vec<String>> {
+pub fn read_columns(rows: Vec<Row>, column_indices: &[usize]) -> Vec<Vec<String>> {
     let mut column_values = Vec::new();
     for row in rows {
         let mut row_cols = Vec::new();
         if column_indices.contains(&0) {
             row_cols.push(row.row_id.to_string())
         }
-        for column_index in column_indices.as_slice() {
+        for column_index in column_indices {
             match &row.values[*column_index] {
                 SerialValue::Text(value) => row_cols.push(value.clone()),
                 SerialValue::Null => (),
@@ -485,8 +478,6 @@ pub fn get_index_page(schemas: &[Schema], table: &str, column: &str) -> Result<O
         .filter(|schema| schema.schema_type == "index")
         .cloned()
         .collect();
-
-    // println!("{:?}", index_schemas);
 
     let table_index = index_schemas.iter().find(|schema| {
         schema.table_name == table
