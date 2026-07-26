@@ -295,6 +295,8 @@ pub fn full_table_scan(
                 page_location.page_number = child.left_child as usize;
                 full_table_scan(file, page_location, rows)?;
             }
+            page_location.page_number = page.page_header.right_page_number.unwrap() as usize;
+            full_table_scan(file, page_location, rows)?;
         }
 
         PageType::TableLeaf => {
@@ -305,12 +307,6 @@ pub fn full_table_scan(
                     values,
                 };
                 rows.push(row);
-            }
-        }
-        PageType::IndexInterior => {
-            for child in page.index_interior_cells()? {
-                page_location.page_number = child.left_child as usize;
-                full_table_scan(file, page_location, rows)?;
             }
         }
         _ => unreachable!("Invalid page type for sqlite_schema"),
