@@ -245,7 +245,7 @@ pub fn search_table(
         PageType::TableInterior => {
             let cells = page.table_interior_cells()?;
 
-            let cell = cells.iter().find(|cell| row_id < cell.row_id);
+            let cell = cells.iter().find(|cell| row_id <= cell.row_id);
 
             match cell {
                 Some(cell) => {
@@ -272,7 +272,7 @@ pub fn search_table(
                 }
             }
         }
-        _ => todo!(),
+        _ => unreachable!("Invalid page type for table search"),
     }
 
     Ok(())
@@ -409,6 +409,7 @@ pub fn find_table_page(schemas: &[Schema], table: &str) -> Result<usize> {
     Ok(schema.root_page)
 }
 
+// Is table necassary?
 pub fn find_column(schemas: &[Schema], table: &str, column: &str) -> Result<Schema> {
     let schema = schemas.iter().find(|schema| {
         schema
@@ -416,7 +417,7 @@ pub fn find_column(schemas: &[Schema], table: &str, column: &str) -> Result<Sche
             .to_lowercase()
             .as_str()
             .contains(column.to_lowercase().as_str())
-        // && schema.table_name == table
+            && schema.table_name == table
     });
 
     match schema {
