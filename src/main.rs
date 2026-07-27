@@ -31,6 +31,14 @@ fn main() -> Result<()> {
             let table_names = btree::get_table_names(schemas);
             page::btree::display_string_vector(table_names)?;
         }
+        ".indexes" => {
+            btree::indexes(&schemas);
+        }
+        ".schema" => {
+            for schema in schemas {
+                println!("{}", schema.sql)
+            }
+        }
         cmd if cmd.to_lowercase().contains("select count(*)") => {
             // Example command: "SELECT COUNT(*) FROM apples"
             // Last argument is the table to get count from

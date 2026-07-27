@@ -19,7 +19,7 @@ pub struct BTreePage {
 
 impl BTreePage {
     pub fn new(bytes: Vec<u8>, file_header: Option<DatabaseHeader>) -> Result<BTreePage> {
-        let mut cursor = Cursor::new(bytes.clone());
+        let mut cursor = Cursor::new(bytes);
         let page_header = PageHeader::new(&mut cursor)?;
         let cell_pointer_array = BTreePage::pointers(&mut cursor, &page_header)?;
         let _unallocated_space_size = if file_header.is_some() {
@@ -28,7 +28,7 @@ impl BTreePage {
             page_header.cell_content_area_start as u64 - cursor.position()
         };
 
-        let data = bytes;
+        let data = cursor.into_inner();
 
         Ok(BTreePage {
             file_header,
@@ -278,6 +278,7 @@ pub fn search_table(
     Ok(())
 }
 
+// Returns all rows from table
 pub fn full_table_scan(
     file: &mut File,
     page_location: &mut PageLocation,
@@ -516,16 +517,17 @@ pub fn get_index_page(schemas: &[Schema], table: &str, column: &str) -> Result<O
     }
 }
 
-pub fn indices(schemas: &[Schema]) {
+pub fn indexes(schemas: &[Schema]) {
     let indices: Vec<String> = schemas
         .iter()
         .filter_map(|schema| {
             if schema.schema_type == "index" {
-                let index_name_start_pos = schema.sql.rfind("[");
-                let index_name_end_pos = schema.sql.rfind("]");
+                let index_name_start_pos = schema.sql.rfind("(");
+                let index_name_end_pos = schema.sql.rfind(")");
 
                 if let (Some(start), Some(end)) = (index_name_start_pos, index_name_end_pos) {
-                    Some(schema.sql[start + 1..end].to_string())
+                    let index = schema.sql[start + 1..end].to_string();
+                    Some(index.chars().filter(|c| c.is_ascii_alphabetic()).collect())
                 } else {
                     None
                 }
