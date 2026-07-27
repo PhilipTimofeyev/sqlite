@@ -151,7 +151,7 @@ pub fn search_index(
                     None
                 };
 
-                page_location.page_number = cell.left_child as usize;
+                page_location.page_number = cell.left_page_number as usize;
 
                 match key {
                     SerialValue::Text(key) => {
@@ -249,7 +249,7 @@ pub fn search_table(
 
             match cell {
                 Some(cell) => {
-                    page_location.page_number = cell.left_child as usize;
+                    page_location.page_number = cell.left_page_number as usize;
                     search_table(file, page_location, rows, row_id)?;
                 }
                 None => {
@@ -292,7 +292,7 @@ pub fn full_table_scan(
     match page.page_header.page_type {
         PageType::TableInterior => {
             for child in page.table_interior_cells()? {
-                page_location.page_number = child.left_child as usize;
+                page_location.page_number = child.left_page_number as usize;
                 full_table_scan(file, page_location, rows)?;
             }
             page_location.page_number = page.page_header.right_page_number.unwrap() as usize;
@@ -340,7 +340,7 @@ pub fn build_schemas(
         }
         PageType::TableInterior => {
             for cell in page.table_interior_cells()? {
-                page_location.page_number = cell.left_child as usize;
+                page_location.page_number = cell.left_page_number as usize;
                 build_schemas(file, page_location, schemas)?;
             }
             page_location.page_number = page.page_header.right_page_number.unwrap() as usize;
@@ -361,7 +361,7 @@ pub fn schemas(file: &mut File, page_size: u16, page: &BTreePage) -> Result<Vec<
             let cells = page.table_interior_cells()?;
             for cell in cells {
                 let mut page_location = PageLocation {
-                    page_number: cell.left_child as usize,
+                    page_number: cell.left_page_number as usize,
                     page_size,
                 };
 
