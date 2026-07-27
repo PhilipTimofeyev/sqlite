@@ -103,6 +103,7 @@ fn main() -> Result<()> {
             )?;
 
             let columns = btree::read_columns(&rows, &column_indices);
+
             btree::display_columns(columns);
         }
         cmd if cmd.to_lowercase().contains("select") => {
@@ -165,6 +166,7 @@ fn where_command_search(
                 page::btree::search_table(file, page_location, &mut rows, *row_id)?;
                 page_location.page_number = table_page_number;
             }
+
             Ok(rows)
         }
         None => {

@@ -170,7 +170,7 @@ impl Schema {
                     .as_str()
                     .contains(column_name.to_lowercase().as_str())
             })
-            .unwrap();
+            .expect("Schema Column Not Found");
 
         Ok(column)
     }

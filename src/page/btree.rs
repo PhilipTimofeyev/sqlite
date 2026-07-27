@@ -343,6 +343,8 @@ pub fn build_schemas(
                 page_location.page_number = cell.left_child as usize;
                 build_schemas(file, page_location, schemas)?;
             }
+            page_location.page_number = page.page_header.right_page_number.unwrap() as usize;
+            build_schemas(file, page_location, schemas)?;
         }
 
         _ => unreachable!("Invalid page type for sqlite_schema"),
@@ -365,6 +367,12 @@ pub fn schemas(file: &mut File, page_size: u16, page: &BTreePage) -> Result<Vec<
 
                 build_schemas(file, &mut page_location, &mut schemas)?;
             }
+            let mut page_location = PageLocation {
+                page_number: page.page_header.right_page_number.unwrap() as usize,
+                page_size,
+            };
+
+            build_schemas(file, &mut page_location, &mut schemas)?;
         }
         PageType::TableLeaf => {
             for cell in page.table_leaf_cells()? {
@@ -408,7 +416,7 @@ pub fn find_column(schemas: &[Schema], table: &str, column: &str) -> Result<Sche
             .to_lowercase()
             .as_str()
             .contains(column.to_lowercase().as_str())
-            && schema.table_name == table
+        // && schema.table_name == table
     });
 
     match schema {
@@ -507,11 +515,27 @@ pub fn get_index_page(schemas: &[Schema], table: &str, column: &str) -> Result<O
     }
 }
 
-pub fn indexes(schemas: &[Schema]) {
-    for schema in schemas {
-        if schema.schema_type == "index" && schema.name.contains("idx") {
-            println!("{:?}", schema.name)
-        };
+pub fn indices(schemas: &[Schema]) {
+    let indices: Vec<String> = schemas
+        .iter()
+        .filter_map(|schema| {
+            if schema.schema_type == "index" {
+                let index_name_start_pos = schema.sql.rfind("[");
+                let index_name_end_pos = schema.sql.rfind("]");
+
+                if let (Some(start), Some(end)) = (index_name_start_pos, index_name_end_pos) {
+                    Some(schema.sql[start + 1..end].to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    for index in indices {
+        println!("{index}")
     }
 }
 
