@@ -35,9 +35,19 @@ fn main() -> Result<()> {
             btree::indexes(&schemas);
         }
         ".schema" => {
-            for schema in schemas {
-                println!("{}", schema.sql)
-            }
+            let table = &args.get(3);
+
+            match table {
+                Some(table) => {
+                    let schema = btree::find_table_schema(&schemas, table)?;
+                    println!("{}", schema.sql);
+                }
+                None => {
+                    for schema in schemas {
+                        println!("{}\n", schema.sql)
+                    }
+                }
+            };
         }
         cmd if cmd.to_lowercase().contains("select count(*)") => {
             // Example command: "SELECT COUNT(*) FROM apples"

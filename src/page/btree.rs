@@ -5,7 +5,7 @@ use crate::page::cell::index_leaf::IndexLeafCell;
 use crate::page::cell::table_interior::TableInteriorCell;
 use crate::page::cell::table_leaf::TableLeafCell;
 use crate::page::cell::{Schema, SerialValue, build_serial_values};
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 
@@ -490,6 +490,15 @@ pub fn display_columns(columns: Vec<Vec<String>>) {
         let columns = row.join("|");
         println!("{columns}");
     }
+}
+
+pub fn find_table_schema(schemas: &[Schema], table: &str) -> Result<Schema> {
+    let schema = schemas
+        .iter()
+        .find(|schema| schema.table_name.to_lowercase().as_str() == table.to_lowercase().as_str())
+        .context("Table not found")?;
+
+    Ok(schema.clone())
 }
 
 pub fn get_index_page(schemas: &[Schema], table: &str, column: &str) -> Result<Option<u32>> {
