@@ -518,7 +518,7 @@ pub fn get_index_page(schemas: &[Schema], table: &str, column: &str) -> Result<O
 }
 
 pub fn indexes(schemas: &[Schema]) {
-    let indices: Vec<String> = schemas
+    let indices: Vec<(String, String)> = schemas
         .iter()
         .filter_map(|schema| {
             if schema.schema_type == "index" {
@@ -527,7 +527,9 @@ pub fn indexes(schemas: &[Schema]) {
 
                 if let (Some(start), Some(end)) = (index_name_start_pos, index_name_end_pos) {
                     let index = schema.sql[start + 1..end].to_string();
-                    Some(index.chars().filter(|c| c.is_ascii_alphabetic()).collect())
+                    let index: String = index.chars().filter(|c| c.is_ascii_alphabetic()).collect();
+                    let table = schema.table_name.clone();
+                    Some((index, table))
                 } else {
                     None
                 }
@@ -537,8 +539,8 @@ pub fn indexes(schemas: &[Schema]) {
         })
         .collect();
 
-    for index in indices {
-        println!("{index}")
+    for (index, table) in indices {
+        println!("{index}: {table}")
     }
 }
 
