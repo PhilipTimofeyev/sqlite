@@ -68,6 +68,7 @@ fn main() -> Result<()> {
             println!("{}", rows.len())
         }
         cmd if cmd.to_lowercase().contains("select *") => {
+            // Example command: "SELECT * FROM artists"
             // Displays all rows from a table
             let split_command = command::split_command(cmd);
             let table_name = command::parse_command_table_name(&split_command)?;
